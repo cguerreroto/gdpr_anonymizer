@@ -1,0 +1,22 @@
+[project]
+name = "yolo-raw-extractor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "decryphe", email = "12104091+decryphe@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "opencv-python>=4.12.0.88",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+yolo-raw-extractor = "yolo_raw_extractor:main"
+yolo-segment-extractor = "yolo_raw_extractor.segments:main"
+yolo-augmentor = "yolo_raw_extractor.augment:main"
+
+[build-system]
+requires = ["uv_build>=0.9.13,<0.10.0"]
+build-backend = "uv_build"

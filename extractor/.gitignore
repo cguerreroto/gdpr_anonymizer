@@ -1,0 +1,20 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+
+# Virtual environments & tool caches
+.venv/
+*/.venv/
+.uv-cache/
+
+# Misc
+*.log
+*.DS_Store
+
+test*/**/*
