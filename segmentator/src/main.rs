@@ -247,29 +247,33 @@ impl MyApp {
 
         ui.separator();
         ui.heading("Images");
-        for purpose in ImagePurpose::ALL {
-            let title = purpose.display_name();
-            let list = images.list(purpose);
-            ui.label(egui::RichText::new(title).strong());
-            if list.is_empty() {
-                ui.label("  (no images)");
-            } else {
-                egui::Grid::new(format!("image_grid_{title}"))
-                    .striped(true)
-                    .num_columns(3)
-                    .show(ui, |ui| {
-                        for entry in list {
-                            ui.label(entry.path.display().to_string());
-                            ui.label(if entry.has_labels { "" } else { "(new)" });
-                            if ui.small_button("Load").clicked() {
-                                self.load_image(ui.ctx(), purpose, &entry.path);
-                            }
-                            ui.end_row();
-                        }
-                    });
-            }
-            ui.add_space(4.0);
-        }
+        egui::ScrollArea::vertical()
+            .id_salt("images_scroll")
+            .show(ui, |ui| {
+                for purpose in ImagePurpose::ALL {
+                    let title = purpose.display_name();
+                    let list = images.list(purpose);
+                    ui.label(egui::RichText::new(title).strong());
+                    if list.is_empty() {
+                        ui.label("  (no images)");
+                    } else {
+                        egui::Grid::new(format!("image_grid_{title}"))
+                            .striped(true)
+                            .num_columns(3)
+                            .show(ui, |ui| {
+                                for entry in list {
+                                    ui.label(entry.path.display().to_string());
+                                    ui.label(if entry.has_labels { "" } else { "(new)" });
+                                    if ui.small_button("Load").clicked() {
+                                        self.load_image(ui.ctx(), purpose, &entry.path);
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                    ui.add_space(4.0);
+                }
+            });
     }
 
     fn handle_new_dataset(&mut self) {
