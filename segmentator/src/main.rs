@@ -28,6 +28,12 @@ enum NavDirection {
     Next,
 }
 
+/// Multiplier on top of fit-to-viewport scale (1.0 = legacy behavior).
+const IMAGE_VIEW_ZOOM_MIN: f32 = 0.25;
+const IMAGE_VIEW_ZOOM_MAX: f32 = 8.0;
+/// `zoom *= exp(-scroll_y * factor)` -> tuned for trackpad and mouse wheel sensitivity.
+const IMAGE_VIEW_ZOOM_SCROLL_EXP_FACTOR: f32 = 0.002;
+
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
@@ -50,6 +56,10 @@ struct MyApp {
     worker: DirectoryWatcher,
     status_message: Option<String>,
     current_image: Option<ActiveImage>,
+    /// Extra zoom on top of fit-to-viewport scale (wheel); not persisted.
+    image_view_zoom: f32,
+    /// Screen-space offset of the image center from the viewport center.
+    image_view_pan: egui::Vec2,
     selected_segment_id: Option<usize>,
     data_dirty: bool,
     show_save_prompt: bool,
@@ -65,6 +75,8 @@ impl MyApp {
             worker,
             status_message: None,
             current_image: None,
+            image_view_zoom: 1.0,
+            image_view_pan: egui::Vec2::ZERO,
             selected_segment_id: None,
             data_dirty: false,
             show_save_prompt: false,
@@ -360,6 +372,8 @@ impl MyApp {
         }
         self.current_image = None;
         self.selected_segment_id = None;
+        self.image_view_zoom = 1.0;
+        self.image_view_pan = egui::Vec2::ZERO;
         self.data_dirty = false;
         self.show_save_prompt = false;
         self.worker.notify_dataset_changed();
@@ -494,32 +508,67 @@ impl MyApp {
             .unwrap_or_default()
     }
 
-    #[allow(clippy::cast_precision_loss)]
-    fn center_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Image");
-        ui.separator();
-        if let Some(active) = &self.current_image {
-            let segments_snapshot = self.current_segments_snapshot();
-            if let Some(selected) = self.selected_segment_id {
-                ui.label(format!("Editing segment #{selected}"));
-            } else {
-                ui.label("Select a segment to edit");
-            }
-            ui.label(active.reference.full_path.display().to_string());
-            let texture_id = active.texture.id();
-            let texture_size = active.texture.size_vec2();
-            let available = ui.available_size();
-            let scale = (available.x / texture_size.x)
-                .min(available.y / texture_size.y)
+    #[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+    fn draw_zoomable_image_in_viewport(
+        &mut self,
+        ui: &mut egui::Ui,
+        viewport: egui::Rect,
+        viewport_clip: egui::Rect,
+        texture_id: egui::TextureId,
+        texture_size: egui::Vec2,
+        segments_snapshot: &[dataset::SegmentEntry],
+    ) {
+        let zoom_factor = self.image_view_zoom;
+        let stroke_width = 2.0 / zoom_factor;
+        let handle_half = 3.0 / zoom_factor;
+        let font_size = 14.0 / zoom_factor;
+
+        let _ = ui.scope_builder(egui::UiBuilder::new().max_rect(viewport), |ui| {
+            ui.set_clip_rect(viewport_clip);
+
+            let fit_scale = (viewport.width() / texture_size.x)
+                .min(viewport.height() / texture_size.y)
                 .clamp(0.01, 1.0);
-            let final_size = texture_size * scale;
+
+            let display_size_before_scroll = texture_size * (fit_scale * self.image_view_zoom);
+            let image_center_before = viewport.center() + self.image_view_pan;
+            let image_rect_before =
+                egui::Rect::from_center_size(image_center_before, display_size_before_scroll);
+
+            if let Some(pointer_pos) = ui.ctx().pointer_latest_pos()
+                && image_rect_before.contains(pointer_pos)
+            {
+                let scroll_y = ui.ctx().input(|i| i.smooth_scroll_delta.y);
+                if scroll_y.abs() > f32::EPSILON
+                    && image_rect_before.width() > f32::EPSILON
+                    && image_rect_before.height() > f32::EPSILON
+                {
+                    let rel = ((pointer_pos - image_rect_before.min) / image_rect_before.size())
+                        .clamp(egui::vec2(0.0, 0.0), egui::vec2(1.0, 1.0));
+                    let new_zoom = (self.image_view_zoom
+                        * (-scroll_y * IMAGE_VIEW_ZOOM_SCROLL_EXP_FACTOR).exp())
+                    .clamp(IMAGE_VIEW_ZOOM_MIN, IMAGE_VIEW_ZOOM_MAX);
+                    if (new_zoom - self.image_view_zoom).abs() > f32::EPSILON {
+                        self.image_view_zoom = new_zoom;
+                        let new_display_size = texture_size * (fit_scale * self.image_view_zoom);
+                        self.image_view_pan = pointer_pos.to_vec2() - rel * new_display_size
+                            + new_display_size * 0.5
+                            - viewport.center().to_vec2();
+                    }
+                }
+            }
+
+            let display_size = texture_size * (fit_scale * self.image_view_zoom);
+            let image_rect =
+                egui::Rect::from_center_size(viewport.center() + self.image_view_pan, display_size);
+
             let image_widget = egui::widgets::Image::new((texture_id, texture_size))
-                .fit_to_exact_size(final_size)
+                .fit_to_exact_size(display_size)
                 .sense(egui::Sense::click());
-            let response = ui.add(image_widget);
+            let response = ui.put(image_rect, image_widget);
             let rect = response.rect;
             let painter = ui.painter_at(rect);
-            for segment in &segments_snapshot {
+            for segment in segments_snapshot {
                 let points: Vec<egui::Pos2> = segment
                     .polygon
                     .iter()
@@ -537,7 +586,7 @@ impl MyApp {
                     2 => {
                         painter.add(egui::epaint::Shape::line_segment(
                             [points[0], points[1]],
-                            egui::Stroke::new(2.0, stroke_color),
+                            egui::Stroke::new(stroke_width, stroke_color),
                         ));
                         let midpoint = egui::pos2(
                             (points[0].x + points[1].x) * 0.5,
@@ -547,7 +596,7 @@ impl MyApp {
                             midpoint,
                             egui::Align2::CENTER_CENTER,
                             format!("#{}", segment.id),
-                            egui::FontId::proportional(14.0),
+                            egui::FontId::proportional(font_size),
                             stroke_color,
                         );
                     }
@@ -555,7 +604,7 @@ impl MyApp {
                         painter.add(egui::epaint::PathShape::convex_polygon(
                             points.clone(),
                             fill,
-                            egui::epaint::Stroke::new(2.0, stroke_color),
+                            egui::epaint::Stroke::new(stroke_width, stroke_color),
                         ));
                         let (sum_x, sum_y) = points
                             .iter()
@@ -566,15 +615,22 @@ impl MyApp {
                             centroid,
                             egui::Align2::CENTER_CENTER,
                             format!("#{}", segment.id),
-                            egui::FontId::proportional(14.0),
+                            egui::FontId::proportional(font_size),
                             stroke_color,
                         );
                     }
                 }
 
                 for point in &points {
-                    let rect = egui::Rect::from_center_size(*point, egui::vec2(6.0, 6.0));
-                    painter.add(egui::epaint::Shape::rect_filled(rect, 1.0, stroke_color));
+                    let handle_rect = egui::Rect::from_center_size(
+                        *point,
+                        egui::vec2(handle_half * 2.0, handle_half * 2.0),
+                    );
+                    painter.add(egui::epaint::Shape::rect_filled(
+                        handle_rect,
+                        1.0,
+                        stroke_color,
+                    ));
                 }
             }
 
@@ -587,6 +643,34 @@ impl MyApp {
                 let rel_y = ((pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
                 self.add_point_to_selected_segment(rel_x, rel_y);
             }
+        });
+    }
+
+    fn center_panel(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Image");
+        ui.separator();
+        if let Some(active) = &self.current_image {
+            let segments_snapshot = self.current_segments_snapshot();
+            if let Some(selected) = self.selected_segment_id {
+                ui.label(format!("Editing segment #{selected}"));
+            } else {
+                ui.label("Select a segment to edit");
+            }
+            ui.label(active.reference.full_path.display().to_string());
+
+            let texture_id = active.texture.id();
+            let texture_size = active.texture.size_vec2();
+            let viewport = ui.available_rect_before_wrap();
+            let viewport_clip = viewport.intersect(ui.clip_rect());
+
+            self.draw_zoomable_image_in_viewport(
+                ui,
+                viewport,
+                viewport_clip,
+                texture_id,
+                texture_size,
+                &segments_snapshot,
+            );
         } else {
             ui.label("Select an image from the left pane to begin annotating.");
         }
@@ -626,6 +710,8 @@ impl MyApp {
             egui::TextureOptions::LINEAR,
         );
         self.current_image = Some(ActiveImage { reference, texture });
+        self.image_view_zoom = 1.0;
+        self.image_view_pan = egui::Vec2::ZERO;
         self.selected_segment_id = None;
         self.data_dirty = dirty;
         if let Some(active) = &self.current_image {
