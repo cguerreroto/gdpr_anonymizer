@@ -98,15 +98,21 @@ impl eframe::App for MyApp {
 
         if self.has_dataset() && !self.show_save_prompt {
             let mut nav_request = None;
+            let mut recenter_view = false;
             ctx.input(|input| {
                 if input.key_pressed(egui::Key::ArrowLeft) {
                     nav_request = Some(NavDirection::Previous);
                 } else if input.key_pressed(egui::Key::ArrowRight) {
                     nav_request = Some(NavDirection::Next);
+                } else if input.key_pressed(egui::Key::R) {
+                    recenter_view = true;
                 }
             });
             if let Some(dir) = nav_request {
                 self.navigate_image(dir, ctx);
+            }
+            if recenter_view && self.current_image.is_some() && !ctx.wants_keyboard_input() {
+                self.recenter_image_view();
             }
         }
 
@@ -681,6 +687,16 @@ impl MyApp {
             .read()
             .map(|guard| guard.is_some())
             .unwrap_or(false)
+    }
+
+    /// Reset zoom/pan to match a freshly loaded image (does not reload texture or clear selection).
+    fn recenter_image_view(&mut self) {
+        if self.current_image.is_none() {
+            return;
+        }
+        self.image_view_zoom = 1.0;
+        self.image_view_pan = egui::Vec2::ZERO;
+        self.status_message = Some("Recentered image view (R)".to_owned());
     }
 
     fn load_image(&mut self, ctx: &egui::Context, split: ImagePurpose, relative_path: &Path) {
