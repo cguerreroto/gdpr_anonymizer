@@ -61,6 +61,10 @@ struct MyApp {
     /// Screen-space offset of the image center from the viewport center.
     image_view_pan: egui::Vec2,
     selected_segment_id: Option<usize>,
+    /// Undo stack for polygon edits of `polygon_history_segment_id` only.
+    polygon_undo_stack: Vec<Vec<dataset::SegmentPoint>>,
+    polygon_redo_stack: Vec<Vec<dataset::SegmentPoint>>,
+    polygon_history_segment_id: Option<usize>,
     data_dirty: bool,
     show_save_prompt: bool,
     pending_action: Option<PendingAction>,
@@ -78,6 +82,9 @@ impl MyApp {
             image_view_zoom: 1.0,
             image_view_pan: egui::Vec2::ZERO,
             selected_segment_id: None,
+            polygon_undo_stack: Vec::new(),
+            polygon_redo_stack: Vec::new(),
+            polygon_history_segment_id: None,
             data_dirty: false,
             show_save_prompt: false,
             pending_action: None,
@@ -99,6 +106,8 @@ impl eframe::App for MyApp {
         if self.has_dataset() && !self.show_save_prompt {
             let mut nav_request = None;
             let mut recenter_view = false;
+            let mut undo_polygon = false;
+            let mut redo_polygon = false;
             ctx.input(|input| {
                 if input.key_pressed(egui::Key::ArrowLeft) {
                     nav_request = Some(NavDirection::Previous);
@@ -106,6 +115,10 @@ impl eframe::App for MyApp {
                     nav_request = Some(NavDirection::Next);
                 } else if input.key_pressed(egui::Key::R) {
                     recenter_view = true;
+                } else if input.key_pressed(egui::Key::Z) {
+                    undo_polygon = true;
+                } else if input.key_pressed(egui::Key::Y) {
+                    redo_polygon = true;
                 }
             });
             if let Some(dir) = nav_request {
@@ -113,6 +126,13 @@ impl eframe::App for MyApp {
             }
             if recenter_view && self.current_image.is_some() && !ctx.wants_keyboard_input() {
                 self.recenter_image_view();
+            }
+            if !ctx.wants_keyboard_input() && self.current_image.is_some() {
+                if undo_polygon {
+                    self.undo_selected_segment_polygon();
+                } else if redo_polygon {
+                    self.redo_selected_segment_polygon();
+                }
             }
         }
 
@@ -315,6 +335,7 @@ impl MyApp {
                     }
                     self.current_image = None;
                     self.selected_segment_id = None;
+                    self.clear_polygon_edit_history();
                     self.data_dirty = false;
                     self.show_save_prompt = false;
                     self.worker.notify_dataset_changed();
@@ -352,6 +373,7 @@ impl MyApp {
                 }
                 self.current_image = None;
                 self.selected_segment_id = None;
+                self.clear_polygon_edit_history();
                 self.data_dirty = false;
                 self.show_save_prompt = false;
                 self.worker.notify_dataset_changed();
@@ -380,6 +402,7 @@ impl MyApp {
         self.selected_segment_id = None;
         self.image_view_zoom = 1.0;
         self.image_view_pan = egui::Vec2::ZERO;
+        self.clear_polygon_edit_history();
         self.data_dirty = false;
         self.show_save_prompt = false;
         self.worker.notify_dataset_changed();
@@ -689,6 +712,136 @@ impl MyApp {
             .unwrap_or(false)
     }
 
+    fn clear_polygon_edit_history(&mut self) {
+        self.polygon_undo_stack.clear();
+        self.polygon_redo_stack.clear();
+        self.polygon_history_segment_id = None;
+    }
+
+    fn sync_polygon_edit_history_segment(&mut self) {
+        if self.polygon_history_segment_id != self.selected_segment_id {
+            self.polygon_undo_stack.clear();
+            self.polygon_redo_stack.clear();
+            self.polygon_history_segment_id = self.selected_segment_id;
+        }
+    }
+
+    fn undo_selected_segment_polygon(&mut self) {
+        let Some(segment_id) = self.selected_segment_id else {
+            self.status_message = Some("Select a segment before undo (Z)".to_owned());
+            return;
+        };
+        let (split, relative_path) = {
+            let Some(active) = self.current_image.as_ref() else {
+                self.status_message = Some("Load an image before undo (Z)".to_owned());
+                return;
+            };
+            (
+                active.reference.split,
+                active.reference.relative_path.clone(),
+            )
+        };
+        self.sync_polygon_edit_history_segment();
+        let Some(previous) = self.polygon_undo_stack.pop() else {
+            self.status_message = Some("Nothing to undo".to_owned());
+            return;
+        };
+
+        let mut segment_missing = false;
+        {
+            let mut guard = self.dataset.write().expect("dataset lock poisoned");
+            if let Some(dataset) = guard.as_mut() {
+                let Ok(loaded_image) = dataset.ensure_image_loaded(split, &relative_path) else {
+                    self.status_message = Some("Unable to load current image for undo".to_owned());
+                    self.polygon_undo_stack.push(previous);
+                    return;
+                };
+                if let Some(idx) = loaded_image
+                    .segments
+                    .iter()
+                    .position(|seg| seg.id == segment_id)
+                {
+                    let count = {
+                        let seg = &mut loaded_image.segments[idx];
+                        self.polygon_redo_stack.push(seg.polygon.clone());
+                        seg.polygon = previous;
+                        seg.polygon.len()
+                    };
+                    loaded_image.mark_dirty();
+                    self.data_dirty = true;
+                    self.status_message = Some(format!(
+                        "Undo (Z): segment #{segment_id} now has {count} point(s)"
+                    ));
+                } else {
+                    self.status_message = Some("Selected segment no longer exists".to_owned());
+                    self.selected_segment_id = None;
+                    segment_missing = true;
+                }
+            }
+        }
+        if segment_missing {
+            self.clear_polygon_edit_history();
+        }
+    }
+
+    fn redo_selected_segment_polygon(&mut self) {
+        let Some(segment_id) = self.selected_segment_id else {
+            self.status_message = Some("Select a segment before redo (Y)".to_owned());
+            return;
+        };
+        let (split, relative_path) = {
+            let Some(active) = self.current_image.as_ref() else {
+                self.status_message = Some("Load an image before redo (Y)".to_owned());
+                return;
+            };
+            (
+                active.reference.split,
+                active.reference.relative_path.clone(),
+            )
+        };
+        self.sync_polygon_edit_history_segment();
+        let Some(next) = self.polygon_redo_stack.pop() else {
+            self.status_message = Some("Nothing to redo".to_owned());
+            return;
+        };
+
+        let mut segment_missing = false;
+        {
+            let mut guard = self.dataset.write().expect("dataset lock poisoned");
+            if let Some(dataset) = guard.as_mut() {
+                let Ok(loaded_image) = dataset.ensure_image_loaded(split, &relative_path) else {
+                    self.status_message = Some("Unable to load current image for redo".to_owned());
+                    self.polygon_redo_stack.push(next);
+                    return;
+                };
+                if let Some(idx) = loaded_image
+                    .segments
+                    .iter()
+                    .position(|seg| seg.id == segment_id)
+                {
+                    let count = {
+                        let seg = &mut loaded_image.segments[idx];
+                        self.polygon_undo_stack.push(seg.polygon.clone());
+                        seg.polygon = next;
+                        seg.polygon.len()
+                    };
+                    loaded_image.mark_dirty();
+                    self.data_dirty = true;
+                    self.status_message = Some(format!(
+                        "Redo (Y): segment #{segment_id} now has {count} point(s)"
+                    ));
+                } else {
+                    self.status_message = Some("Selected segment no longer exists".to_owned());
+                    self.selected_segment_id = None;
+                    segment_missing = true;
+                }
+            }
+        }
+        if segment_missing {
+            self.clear_polygon_edit_history();
+        }
+    }
+
     /// Reset zoom/pan to match a freshly loaded image (does not reload texture or clear selection).
     fn recenter_image_view(&mut self) {
         if self.current_image.is_none() {
@@ -729,6 +882,7 @@ impl MyApp {
         self.image_view_zoom = 1.0;
         self.image_view_pan = egui::Vec2::ZERO;
         self.selected_segment_id = None;
+        self.clear_polygon_edit_history();
         self.data_dirty = dirty;
         if let Some(active) = &self.current_image {
             self.status_message = Some(format!(
@@ -806,24 +960,35 @@ impl MyApp {
             self.status_message = Some("Select a segment before adding points".to_owned());
             return;
         };
-        let Some(active) = self.current_image.as_ref() else {
-            self.status_message = Some("Load an image before editing segments".to_owned());
-            return;
+        let (split, relative_path) = {
+            let Some(active) = self.current_image.as_ref() else {
+                self.status_message = Some("Load an image before editing segments".to_owned());
+                return;
+            };
+            (
+                active.reference.split,
+                active.reference.relative_path.clone(),
+            )
         };
+        self.sync_polygon_edit_history_segment();
+
         let mut guard = self.dataset.write().expect("dataset lock poisoned");
         if let Some(dataset) = guard.as_mut() {
-            let Ok(loaded_image) = dataset
-                .ensure_image_loaded(active.reference.split, &active.reference.relative_path)
-            else {
+            let Ok(loaded_image) = dataset.ensure_image_loaded(split, &relative_path) else {
                 self.status_message = Some("Unable to load current image for editing".to_owned());
                 return;
             };
-            if let Some(segment) = loaded_image
+            if let Some(idx) = loaded_image
                 .segments
-                .iter_mut()
-                .find(|seg| seg.id == segment_id)
+                .iter()
+                .position(|seg| seg.id == segment_id)
             {
-                segment.polygon.push(dataset::SegmentPoint { x, y });
+                {
+                    let seg = &mut loaded_image.segments[idx];
+                    self.polygon_undo_stack.push(seg.polygon.clone());
+                    seg.polygon.push(dataset::SegmentPoint { x, y });
+                }
+                self.polygon_redo_stack.clear();
                 loaded_image.mark_dirty();
                 self.data_dirty = true;
                 self.status_message = Some(format!(
