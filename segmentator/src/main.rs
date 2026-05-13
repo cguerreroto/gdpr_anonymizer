@@ -28,6 +28,12 @@ enum NavDirection {
     Next,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AppMainTab {
+    Annotation,
+    Help,
+}
+
 /// Multiplier on top of fit-to-viewport scale (1.0 = legacy behavior).
 const IMAGE_VIEW_ZOOM_MIN: f32 = 0.25;
 const IMAGE_VIEW_ZOOM_MAX: f32 = 8.0;
@@ -68,6 +74,7 @@ struct MyApp {
     data_dirty: bool,
     show_save_prompt: bool,
     pending_action: Option<PendingAction>,
+    main_tab: AppMainTab,
 }
 
 impl MyApp {
@@ -88,6 +95,7 @@ impl MyApp {
             data_dirty: false,
             show_save_prompt: false,
             pending_action: None,
+            main_tab: AppMainTab::Annotation,
         }
     }
 }
@@ -103,7 +111,7 @@ impl eframe::App for MyApp {
             self.toolbar(ui);
         });
 
-        if self.has_dataset() && !self.show_save_prompt {
+        if self.main_tab == AppMainTab::Annotation && self.has_dataset() && !self.show_save_prompt {
             let mut nav_request = None;
             let mut recenter_view = false;
             let mut undo_polygon = false;
@@ -150,20 +158,34 @@ impl eframe::App for MyApp {
                 }
             });
 
-        if self.has_dataset() {
-            egui::SidePanel::left("class_panel")
-                .resizable(true)
-                .default_width(220.0)
-                .show(ctx, |ui| self.class_panel(ui));
+        match self.main_tab {
+            AppMainTab::Help => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    Self::help_panel(ui);
+                });
+            }
+            AppMainTab::Annotation if self.has_dataset() => {
+                egui::SidePanel::left("class_panel")
+                    .resizable(true)
+                    .default_width(220.0)
+                    .show(ctx, |ui| self.class_panel(ui));
 
-            egui::SidePanel::right("segment_panel")
-                .resizable(true)
-                .default_width(260.0)
-                .show(ctx, |ui| self.segment_panel(ui));
+                egui::SidePanel::right("segment_panel")
+                    .resizable(true)
+                    .default_width(260.0)
+                    .show(ctx, |ui| self.segment_panel(ui));
 
-            egui::CentralPanel::default().show(ctx, |ui| {
-                self.center_panel(ui);
-            });
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.center_panel(ui);
+                });
+            }
+            AppMainTab::Annotation => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading("YOLO Segmentator");
+                    ui.add_space(8.0);
+                    ui.label("Open or create a dataset using the toolbar to begin annotating.");
+                });
+            }
         }
 
         if self.show_save_prompt
@@ -193,6 +215,11 @@ impl eframe::App for MyApp {
 impl MyApp {
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.main_tab, AppMainTab::Annotation, "Annotation");
+                ui.selectable_value(&mut self.main_tab, AppMainTab::Help, "Help");
+            });
+            ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
                 if self.has_dataset() {
                     if ui.button("Close Dataset").clicked() {
@@ -217,6 +244,58 @@ impl MyApp {
                     self.navigate_image(NavDirection::Next, ui.ctx());
                 }
             });
+        });
+    }
+
+    fn help_panel(ui: &mut egui::Ui) {
+        ui.heading("Help");
+        ui.separator();
+        ui.label(
+            "This page lists keyboard shortcuts and related controls for the YOLO Segmentator.",
+        );
+        ui.add_space(12.0);
+
+        ui.heading("Keyboard shortcuts");
+        ui.add_space(6.0);
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("General").strong(),
+            );
+            ui.add_space(4.0);
+            ui.label("These shortcuts run only on the Annotation tab when a dataset is open and no save confirmation dialog is showing. They do not run while focus is in a text field, so you can type class names and paths normally.");
+            ui.add_space(10.0);
+
+            ui.label(egui::RichText::new("Arrow Left").strong());
+            ui.label("Moves to the previous image in the dataset order.");
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Arrow Right").strong());
+            ui.label("Moves to the next image in the dataset order.");
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("R").strong());
+            ui.label(
+                "Recenters the image in the main panel when an image is loaded. Zoom and pan return to the same state as right after loading. The segment you were editing stays selected.",
+            );
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Z").strong());
+            ui.label(
+                "Undoes the last point you added to the polygon for the segment that is currently selected. Requires a loaded image and a selected segment. Only that segment’s polygon history is affected.",
+            );
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Y").strong());
+            ui.label(
+                "Redoes a polygon point for the currently selected segment after you used undo. The same requirements apply as for undo.",
+            );
+            ui.add_space(12.0);
+
+            ui.label(egui::RichText::new("Image view").strong());
+            ui.add_space(4.0);
+            ui.label(
+                "With the pointer over the image in the main panel, scroll up or down to zoom in or out. The view stays anchored under the pointer while zoom changes.",
+            );
         });
     }
 
