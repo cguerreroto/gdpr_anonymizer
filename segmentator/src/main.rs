@@ -112,36 +112,7 @@ impl eframe::App for MyApp {
         });
 
         if self.main_tab == AppMainTab::Annotation && self.has_dataset() && !self.show_save_prompt {
-            let mut nav_request = None;
-            let mut recenter_view = false;
-            let mut undo_polygon = false;
-            let mut redo_polygon = false;
-            ctx.input(|input| {
-                if input.key_pressed(egui::Key::ArrowLeft) {
-                    nav_request = Some(NavDirection::Previous);
-                } else if input.key_pressed(egui::Key::ArrowRight) {
-                    nav_request = Some(NavDirection::Next);
-                } else if input.key_pressed(egui::Key::R) {
-                    recenter_view = true;
-                } else if input.key_pressed(egui::Key::Z) {
-                    undo_polygon = true;
-                } else if input.key_pressed(egui::Key::Y) {
-                    redo_polygon = true;
-                }
-            });
-            if let Some(dir) = nav_request {
-                self.navigate_image(dir, ctx);
-            }
-            if recenter_view && self.current_image.is_some() && !ctx.wants_keyboard_input() {
-                self.recenter_image_view();
-            }
-            if !ctx.wants_keyboard_input() && self.current_image.is_some() {
-                if undo_polygon {
-                    self.undo_selected_segment_polygon();
-                } else if redo_polygon {
-                    self.redo_selected_segment_polygon();
-                }
-            }
+            self.handle_annotation_keyboard_shortcuts(ctx);
         }
 
         egui::TopBottomPanel::bottom("status_bar")
@@ -213,6 +184,53 @@ impl eframe::App for MyApp {
 }
 
 impl MyApp {
+    fn handle_annotation_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
+        let mut nav_request = None;
+        let mut recenter_view = false;
+        let mut undo_polygon = false;
+        let mut redo_polygon = false;
+        let mut new_segment_key = false;
+        let mut save_key = false;
+        ctx.input(|input| {
+            if input.key_pressed(egui::Key::ArrowLeft) {
+                nav_request = Some(NavDirection::Previous);
+            } else if input.key_pressed(egui::Key::ArrowRight) {
+                nav_request = Some(NavDirection::Next);
+            } else if input.key_pressed(egui::Key::R) {
+                recenter_view = true;
+            } else if input.key_pressed(egui::Key::Z) {
+                undo_polygon = true;
+            } else if input.key_pressed(egui::Key::Y) {
+                redo_polygon = true;
+            } else if input.key_pressed(egui::Key::N) {
+                new_segment_key = true;
+            } else if input.key_pressed(egui::Key::S) {
+                save_key = true;
+            }
+        });
+        if let Some(dir) = nav_request {
+            self.navigate_image(dir, ctx);
+        }
+        if recenter_view && self.current_image.is_some() && !ctx.wants_keyboard_input() {
+            self.recenter_image_view();
+        }
+        if !ctx.wants_keyboard_input() && self.current_image.is_some() {
+            if undo_polygon {
+                self.undo_selected_segment_polygon();
+            } else if redo_polygon {
+                self.redo_selected_segment_polygon();
+            }
+        }
+        if !ctx.wants_keyboard_input() {
+            if new_segment_key {
+                self.create_new_segment_for_current_image();
+            }
+            if save_key {
+                self.handle_save_dataset();
+            }
+        }
+    }
+
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -262,7 +280,7 @@ impl MyApp {
                 egui::RichText::new("General").strong(),
             );
             ui.add_space(4.0);
-            ui.label("These shortcuts run only on the Annotation tab when a dataset is open and no save confirmation dialog is showing. They do not run while focus is in a text field, so you can type class names and paths normally.");
+            ui.label("These shortcuts run only on the Annotation tab when a dataset is open and no save confirmation dialog is showing. They do not run while focus is in a text field, so you can type class names and paths normally. Letter keys R, Z, Y, N, and S all follow these rules.");
             ui.add_space(10.0);
 
             ui.label(egui::RichText::new("Arrow Left").strong());
@@ -288,6 +306,18 @@ impl MyApp {
             ui.label(egui::RichText::new("Y").strong());
             ui.label(
                 "Redoes a polygon point for the currently selected segment after you used undo. The same requirements apply as for undo.",
+            );
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("N").strong());
+            ui.label(
+                "Creates a new segment on the currently loaded image and selects it for editing, matching the New Segment control in the Segments panel. A loaded image is required, along with the same conditions as the other letter shortcuts.",
+            );
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("S").strong());
+            ui.label(
+                "Saves annotations for the current image, matching the Save control in the toolbar. If there are unsaved changes, the save confirmation dialog appears first.",
             );
             ui.add_space(12.0);
 
@@ -496,6 +526,51 @@ impl MyApp {
         }
     }
 
+    /// Pushes a new segment onto `loaded_image`, marks it dirty, returns the new segment id.
+    fn push_new_segment_core(
+        loaded_image: &mut dataset::LoadedImage,
+        default_class: usize,
+    ) -> usize {
+        let next_id = loaded_image.next_segment_id();
+        loaded_image
+            .segments
+            .push(dataset::SegmentEntry::new(next_id, default_class));
+        loaded_image.mark_dirty();
+        next_id
+    }
+
+    /// Same as the New Segment control: requires a loaded image and an open dataset.
+    fn create_new_segment_for_current_image(&mut self) {
+        let (split, relative_path) = {
+            let Some(active) = self.current_image.as_ref() else {
+                self.status_message = Some("Load an image before creating a segment.".to_owned());
+                return;
+            };
+            (
+                active.reference.split,
+                active.reference.relative_path.clone(),
+            )
+        };
+        let next_id = {
+            let mut guard = self.dataset.write().expect("dataset lock poisoned");
+            let Some(dataset) = guard.as_mut() else {
+                self.status_message = Some("Open a dataset before creating a segment.".to_owned());
+                return;
+            };
+            let classes_snapshot = dataset.classes.clone();
+            let default_class = classes_snapshot.first().map_or(0, |c| c.id);
+            let Ok(loaded_image) = dataset.ensure_image_loaded(split, &relative_path) else {
+                self.status_message =
+                    Some("Unable to load current image segments for a new segment.".to_owned());
+                return;
+            };
+            Self::push_new_segment_core(loaded_image, default_class)
+        };
+        self.selected_segment_id = Some(next_id);
+        self.data_dirty = true;
+        self.status_message = Some(format!("Created segment #{next_id}"));
+    }
+
     fn segment_panel(&mut self, ui: &mut egui::Ui) {
         let Some(active) = self.current_image.as_ref() else {
             ui.label("Load an image to manage segments");
@@ -518,12 +593,8 @@ impl MyApp {
         ui.horizontal(|ui| {
             ui.heading("Segments");
             if ui.button("New Segment").clicked() {
-                let next_id = loaded_image.next_segment_id();
-                loaded_image
-                    .segments
-                    .push(dataset::SegmentEntry::new(next_id, default_class));
+                let next_id = Self::push_new_segment_core(loaded_image, default_class);
                 self.selected_segment_id = Some(next_id);
-                loaded_image.mark_dirty();
                 self.data_dirty = true;
                 self.status_message = Some(format!("Created segment #{next_id}"));
             }
