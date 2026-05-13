@@ -28,6 +28,12 @@ enum NavDirection {
     Next,
 }
 
+#[derive(Clone, Copy)]
+enum ClassCycleDirection {
+    Up,
+    Down,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AppMainTab {
     Annotation,
@@ -184,6 +190,70 @@ impl eframe::App for MyApp {
 }
 
 impl MyApp {
+    fn cycle_selected_segment_class(&mut self, direction: ClassCycleDirection) {
+        let Some(segment_id) = self.selected_segment_id else {
+            self.status_message =
+                Some("Select a segment before changing its class with the arrow keys.".to_owned());
+            return;
+        };
+        let (split, relative_path) = {
+            let Some(active) = self.current_image.as_ref() else {
+                self.status_message =
+                    Some("Load an image before changing class with the arrow keys.".to_owned());
+                return;
+            };
+            (
+                active.reference.split,
+                active.reference.relative_path.clone(),
+            )
+        };
+        let mut guard = self.dataset.write().expect("dataset lock poisoned");
+        let Some(dataset) = guard.as_mut() else {
+            return;
+        };
+        let classes_snapshot = dataset.classes.clone();
+        let mut ids: Vec<usize> = dataset.classes.iter().map(|c| c.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        if ids.is_empty() {
+            self.status_message =
+                Some("Define at least one class before assigning a segment class.".to_owned());
+            return;
+        }
+        let Ok(loaded_image) = dataset.ensure_image_loaded(split, &relative_path) else {
+            self.status_message =
+                Some("Unable to load current image to change segment class.".to_owned());
+            return;
+        };
+        let Some(seg_idx) = loaded_image
+            .segments
+            .iter()
+            .position(|s| s.id == segment_id)
+        else {
+            self.status_message = Some("Selected segment no longer exists.".to_owned());
+            self.selected_segment_id = None;
+            return;
+        };
+        let seg = &mut loaded_image.segments[seg_idx];
+        if !ids.contains(&seg.class_index) {
+            seg.class_index = ids[0];
+        }
+        let i = ids
+            .iter()
+            .position(|&id| id == seg.class_index)
+            .expect("class_index must match an id after snap");
+        let j = match direction {
+            ClassCycleDirection::Down => (i + 1) % ids.len(),
+            ClassCycleDirection::Up => (i + ids.len() - 1) % ids.len(),
+        };
+        seg.class_index = ids[j];
+        let new_class = seg.class_index;
+        loaded_image.mark_dirty();
+        self.data_dirty = true;
+        let label = Self::class_label_from_classes(new_class, &classes_snapshot);
+        self.status_message = Some(format!("Segment #{segment_id}: class {label}"));
+    }
+
     fn handle_annotation_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
         let mut nav_request = None;
         let mut recenter_view = false;
@@ -191,11 +261,17 @@ impl MyApp {
         let mut redo_polygon = false;
         let mut new_segment_key = false;
         let mut save_key = false;
+        let mut class_cycle_up = false;
+        let mut class_cycle_down = false;
         ctx.input(|input| {
             if input.key_pressed(egui::Key::ArrowLeft) {
                 nav_request = Some(NavDirection::Previous);
             } else if input.key_pressed(egui::Key::ArrowRight) {
                 nav_request = Some(NavDirection::Next);
+            } else if input.key_pressed(egui::Key::ArrowUp) {
+                class_cycle_up = true;
+            } else if input.key_pressed(egui::Key::ArrowDown) {
+                class_cycle_down = true;
             } else if input.key_pressed(egui::Key::R) {
                 recenter_view = true;
             } else if input.key_pressed(egui::Key::Z) {
@@ -219,6 +295,10 @@ impl MyApp {
                 self.undo_selected_segment_polygon();
             } else if redo_polygon {
                 self.redo_selected_segment_polygon();
+            } else if class_cycle_up {
+                self.cycle_selected_segment_class(ClassCycleDirection::Up);
+            } else if class_cycle_down {
+                self.cycle_selected_segment_class(ClassCycleDirection::Down);
             }
         }
         if !ctx.wants_keyboard_input() {
@@ -289,6 +369,18 @@ impl MyApp {
 
             ui.label(egui::RichText::new("Arrow Right").strong());
             ui.label("Moves to the next image in the dataset order.");
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Arrow Up").strong());
+            ui.label(
+                "Moves to the previous class id for the segment you are editing, among all defined classes in ascending id order, wrapping from the lowest id to the highest. Requires a loaded image and a selected segment. Arrow Left and Arrow Right still change the image, not the class.",
+            );
+            ui.add_space(8.0);
+
+            ui.label(egui::RichText::new("Arrow Down").strong());
+            ui.label(
+                "Moves to the next class id for the segment you are editing, in the same sorted order as Arrow Up, wrapping from the highest id back to the lowest.",
+            );
             ui.add_space(8.0);
 
             ui.label(egui::RichText::new("R").strong());
