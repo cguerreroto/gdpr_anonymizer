@@ -48,3 +48,25 @@ data/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+################################################################################
+# Tests and coverage (local artifacts)
+################################################################################
+
+# pytest cache (last failed, stepwise state, etc.)
+.pytest_cache/
+**/.pytest_cache/
+
+# coverage.py and HTML reports
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
+
+# other common test tooling output
+.tox/
+.hypothesis/
+junit.xml
+**/junit*.xml
+test-results/

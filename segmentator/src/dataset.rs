@@ -738,3 +738,101 @@ impl From<&Dataset> for YamlDoc {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+    use std::fs;
+
+    fn tmp_root() -> PathBuf {
+        std::env::var_os("CARGO_TARGET_TMPDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+    }
+
+    #[test]
+    fn image_purpose_as_dir_and_display() {
+        assert_eq!(ImagePurpose::Train.as_dir(), "train");
+        assert_eq!(ImagePurpose::Val.as_dir(), "val");
+        assert_eq!(ImagePurpose::Test.as_dir(), "test");
+        assert_eq!(ImagePurpose::Train.display_name(), "Training");
+        assert_eq!(ImagePurpose::Val.display_name(), "Validation");
+        assert_eq!(ImagePurpose::Test.display_name(), "Test");
+    }
+
+    #[test]
+    fn image_purpose_from_component() {
+        assert_eq!(
+            ImagePurpose::from_component(OsStr::new("train")),
+            Some(ImagePurpose::Train)
+        );
+        assert_eq!(
+            ImagePurpose::from_component(OsStr::new("val")),
+            Some(ImagePurpose::Val)
+        );
+        assert_eq!(
+            ImagePurpose::from_component(OsStr::new("test")),
+            Some(ImagePurpose::Test)
+        );
+        assert_eq!(ImagePurpose::from_component(OsStr::new("other")), None);
+    }
+
+    #[test]
+    fn dataset_images_from_paths_sets_has_labels() {
+        let root = tmp_root().join(format!(
+            "dsimg_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("train/sub")).unwrap();
+        fs::write(root.join("train/sub/x.jpg"), []).unwrap();
+        fs::write(root.join("train/sub/x.txt"), b"0 0.1 0.1 0.2 0.1 0.15 0.2\n").unwrap();
+
+        let paths = vec![PathBuf::from("train/sub/x.jpg")];
+        let images = DatasetImages::from_paths(&root, paths, DatasetImages::default());
+
+        assert_eq!(images.train.len(), 1);
+        assert_eq!(images.train[0].path, Path::new("sub/x.jpg"));
+        assert!(images.train[0].has_labels);
+        assert!(images.val.is_empty());
+        assert!(images.test.is_empty());
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_segments_parses_valid_and_skips_bad_lines() {
+        let root = tmp_root().join(format!(
+            "segtxt_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = root.join("sample.txt");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            &path,
+            b"0 0.0 0.0 1.0 0.0 0.5 1.0\n\n0 0 0 0.5 0.5\nnotclass 0 0 1 0 1 0 1\n",
+        )
+        .unwrap();
+
+        let segments = LoadedImage::load_segments(&path).expect("load_segments");
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].class_index, 0);
+        assert_eq!(segments[0].polygon.len(), 3);
+        assert!((segments[0].polygon[0].x - 0.0).abs() < f32::EPSILON);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_segments_missing_file_is_empty() {
+        let path = tmp_root().join("no_such_labels_file_yolo_seg.txt");
+        let segments = LoadedImage::load_segments(&path).expect("load_segments");
+        assert!(segments.is_empty());
+    }
+}
