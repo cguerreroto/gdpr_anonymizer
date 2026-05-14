@@ -1,1 +1,13 @@
 /target
+
+# Python (ml_pipeline)
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# ml_pipeline: local packaging / editable-install build dirs (step 1 CLI)
+ml_pipeline/dist/
+ml_pipeline/build/
+ml_pipeline/.eggs/
+ml_pipeline/.mypy_cache/

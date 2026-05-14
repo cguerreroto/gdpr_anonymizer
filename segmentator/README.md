@@ -15,6 +15,11 @@ Rust/egui desktop application for curating YOLO segmentation datasets. It helps 
 3. Define classes, load images, draw/edit polygons, and press **Save** to persist YOLO annotations (prompts if unsaved changes exist).
 4. Navigate through images via Previous/Next buttons or arrow keys.
 
+
+## ml_pipeline (Python)
+
+The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` for auditing datasets and mirroring co-located label files into `labels/<split>/`. Install with `uv sync` from `segmentator/ml_pipeline`, then see the repository root `README.md` for the command line.
+
 ## Development
 - Rust edition 2021; dependencies include `eframe`, `egui`, `serde_yaml_ng`, `futures`, and `notify`.
 - Always run `cargo fmt` after making code changes and `cargo clippy -D warnings` to ensure lints stay clean.
