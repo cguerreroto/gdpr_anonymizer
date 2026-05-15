@@ -9,6 +9,7 @@ dependencies = [
 
 [project.scripts]
 gdpr-yolo-normalize-labels = "ml_pipeline.cli:main"
+gdpr-yolo-fix-dataset-yaml = "ml_pipeline.cli_dataset_yaml:main"
 
 [build-system]
 requires = ["setuptools>=61", "wheel"]
