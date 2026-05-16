@@ -16,6 +16,7 @@ The following sections summarize the components and a conventional processing or
 | 6 | Audit and fix `dataset.yaml` (`nc`, `names`, splits) | `gdpr-yolo-fix-dataset-yaml` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 7 | Train a YOLO26 segmentation model on the prepared dataset | `gdpr-yolo-train` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 8 | Validate a trained checkpoint and report mask + box mAP | `gdpr-yolo-validate` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 9 | Analyze FN/FP errors on validation split to guide labeling | `gdpr-yolo-analyze-errors` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -158,6 +159,37 @@ Useful options:
 - `--interpret-report <path>`: print interpretation for an existing validation JSON file.
 
 The same `dataset.resolved.yaml` rewrite used at training time is performed before validation, so the command also works when launched from outside the dataset directory.
+
+## Error analysis (`ml_pipeline`)
+
+After validation, `gdpr-yolo-analyze-errors` identifies images with the most false negatives (missed detections) and false positives (incorrect detections), helping you decide which images need more labels.
+
+The command runs predictions on the validation split with a configurable confidence threshold (default 0.25), matches predictions to ground truth using IoU overlap (default threshold 0.5), and reports errors aggregated by class and sorted by total error count per image.
+
+Run error analysis (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+
+```bash
+uv run gdpr-yolo-analyze-errors <path-to-dataset-root> \
+    --weights <path-to-runs-root>/yolo26n_seg_v1/weights/best.pt \
+    --imgsz 640 --conf 0.25 --iou-threshold 0.5 \
+    --project <path-to-runs-root> --name error_analysis \
+    --report-json <path-to-runs-root>/error_analysis/errors.json
+```
+
+Useful options:
+
+- `--conf <float>`: confidence threshold for predictions (default 0.25). Lower values find more detections but may increase false positives.
+- `--iou-threshold <float>`: minimum IoU to match a prediction to ground truth (default 0.5). Lower values are more forgiving for matches.
+- `--device <id|cpu|mps>`: override the device autoselect.
+- `--dry-run`: print the resolved configuration without running analysis.
+
+The JSON report includes:
+
+- `summary.total_false_negatives_by_class`: count of GT objects missed, per class.
+- `summary.total_false_positives_by_class`: count of spurious predictions, per class.
+- `summary.worst_images`: list of up to 20 images with the most errors, sorted by total error count.
+
+Use FN counts to prioritize which class needs more labeled examples. Use the worst images list to identify problematic frames for manual review or re-annotation.
 
 ## Segmentator (Rust)
 
