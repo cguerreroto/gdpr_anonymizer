@@ -191,6 +191,24 @@ The JSON report includes:
 
 Use FN counts to prioritize which class needs more labeled examples. Use the worst images list to identify problematic frames for manual review or re-annotation.
 
+### Manual dataset cleaning (researcher workflow)
+
+`gdpr-yolo-analyze-errors` only writes a report. It does not delete images, change splits, or remove samples from training. Treat the step as an optional cleaning pass: you use the report to decide what to fix, then re-run training and validation.
+
+Typical sequence after error analysis:
+
+1. Open `errors.json` together with the latest validation `metrics.json` (from `gdpr-yolo-validate`).
+2. For false negatives, add or correct polygons in the segmentator for the filenames listed under `summary.worst_images`. Labels live under `<path-to-dataset-root>/labels/val/<stem>.txt` (and under `labels/train/` when the same stem is in train).
+3. For false positives, remove incorrect polygons or add missing ground truth in the same `.txt` files.
+4. Optionally label more source frames and run `yolo-augmentor` to grow `<path-to-dataset-root>`.
+5. Re-run `gdpr-yolo-normalize-labels` and `gdpr-yolo-fix-dataset-yaml` if the dataset layout or `dataset.yaml` changed.
+6. Re-train with `gdpr-yolo-train`, warm-starting from `<path-to-runs-root>/.../weights/best.pt` when continuing from a previous run.
+7. Re-run `gdpr-yolo-validate` and `gdpr-yolo-analyze-errors` on the same validation split so results stay comparable.
+
+Use mask mAP@0.5:0.95 from validation as the gate before relying on masks for blur. The validation report `interpretation` block marks `ready_for_video_blur` when overall mask mAP is at least 0.30 (usable band). Below 0.30, prioritize labeling and training over predict or video steps.
+
+Removing files from train or val is manual and uncommon. Reserve it for corrupt frames, duplicates, or labels you will not fix. High false-negative counts usually mean the model or labels need improvement, not that the image should be dropped from the dataset.
+
 ## Segmentator (Rust)
 
 The segmentator is a desktop application for dataset creation, class management, and polygon editing. Annotations are serialized as YOLO segmentation `.txt` files beside the corresponding images.
