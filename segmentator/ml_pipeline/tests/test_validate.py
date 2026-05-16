@@ -199,7 +199,21 @@ def test_run_validation_invokes_factory_and_extracts_metrics(tmp_path: Path) -> 
     assert resolved.is_file()
     assert last_model["m"].val_kwargs["data"] == str(resolved)
     assert report["metrics"]["mask"]["map"] == pytest.approx(0.42)
+    assert report["interpretation"]["assessment"]["band"] == "usable"
+    assert report["interpretation"]["assessment"]["ready_for_video_blur"] is True
     assert report["save_dir"].endswith("yolo26n_seg_val")
+
+
+def test_run_validation_omits_interpretation_when_disabled(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path)
+
+    def _factory(ref: str) -> _StubModel:
+        return _StubModel(ref)
+
+    report = run_validation(
+        cfg, model_factory=_factory, dry_run=False, interpret=False
+    )
+    assert "interpretation" not in report
 
 
 def test_cli_dry_run_prints_report(

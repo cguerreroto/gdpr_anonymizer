@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from ml_pipeline.checkpoints import missing_weights_message
 from ml_pipeline.train import materialize_resolved_dataset_yaml
+from ml_pipeline.metrics_interpret import interpret_validation_report
 from ml_pipeline.ultralytics_extra import raise_ultralytics_missing
 
 
@@ -165,6 +166,7 @@ def run_validation(
     *,
     model_factory: ValModelFactory | None = None,
     dry_run: bool = False,
+    interpret: bool = True,
 ) -> dict[str, Any]:
     """Execute validation and return a serializable report.
 
@@ -177,6 +179,9 @@ def run_validation(
         the lazy Ultralytics loader. Tests pass a stub.
     dry_run:
         When true, only build the kwargs and skip the call to ``val``.
+    interpret:
+        When true and metrics are available, attach ``interpretation`` with
+        threshold-based assessment and recommendations.
 
     """
     
@@ -211,6 +216,8 @@ def run_validation(
         str(save_dir) if save_dir is not None else str(output_dir)
     )
     report["metrics"] = extract_metrics(results)
+    if interpret:
+        report["interpretation"] = interpret_validation_report(report)
     return report
 
 

@@ -131,6 +131,12 @@ Reported metrics (when the installed Ultralytics version exposes them):
 
 Per-class numbers are the primary signal for deciding whether to add more annotated frames for a specific class (for example license plates versus people). Mask mAP is the headline metric since the downstream pipeline blurs masks rather than bounding boxes.
 
+Each validation report includes an `interpretation` block that applies the thresholds documented in the validation driver: mask mAP@0.5:0.95 below 0.30 suggests more labels or training; between 0.30 and 0.50 is usable with per-class review; above 0.50 is a comfortable margin. The block lists `assessment` (band, summary, `ready_for_video_blur`) and `recommendations` (for example which class to label next). Use `--no-interpret` to omit it. To interpret a saved report without re-running Ultralytics:
+
+```bash
+uv run gdpr-yolo-validate --interpret-report <path-to-metrics.json>
+```
+
 Run a validation pass (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
 
 ```bash
@@ -148,6 +154,8 @@ Useful options:
 - `--device <id|cpu|mps>`: override the device autoselect.
 - `--save-json`: forward `save_json=True` to Ultralytics so it emits COCO-format predictions next to the val output.
 - `--dry-run`: print the resolved Ultralytics arguments without invoking validation.
+- `--no-interpret`: omit the `interpretation` block from the JSON report.
+- `--interpret-report <path>`: print interpretation for an existing validation JSON file.
 
 The same `dataset.resolved.yaml` rewrite used at training time is performed before validation, so the command also works when launched from outside the dataset directory.
 

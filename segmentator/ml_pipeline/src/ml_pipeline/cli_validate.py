@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from ml_pipeline.cli_train import _resolve_dataset_yaml
+from ml_pipeline.metrics_interpret import interpret_validation_report
 from ml_pipeline.validate import ValidateConfig, run_validation
 
 
@@ -22,13 +23,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "dataset_root",
+        nargs="?",
         type=Path,
-        help="Directory containing dataset.yaml (or a yaml file path).",
+        default=None,
+        help="Directory containing dataset.yaml (required unless --interpret-report).",
     )
     parser.add_argument(
         "--weights",
         type=Path,
-        required=True,
+        default=None,
         help=(
             "Path to the .pt checkpoint to validate "
             "(for example: <project>/<name>/weights/best.pt)."
@@ -81,6 +84,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print the resolved val kwargs without invoking ultralytics.",
     )
     parser.add_argument(
+        "--no-interpret",
+        action="store_true",
+        help="Omit interpretation (assessment and recommendations) from the report.",
+    )
+    parser.add_argument(
+        "--interpret-report",
+        type=Path,
+        metavar="REPORT_JSON",
+        help=(
+            "Read a prior validation JSON file and print interpretation only "
+            "(no Ultralytics run)."
+        ),
+    )
+    parser.add_argument(
         "--report-json",
         type=Path,
         default=None,
@@ -89,9 +106,24 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _run_interpret_report(path: Path) -> int:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    interpretation = interpret_validation_report(data)
+    print(json.dumps(interpretation, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.interpret_report is not None:
+        return _run_interpret_report(args.interpret_report)
+
+    if args.dataset_root is None:
+        parser.error("dataset_root is required unless --interpret-report is set")
+    if args.weights is None:
+        parser.error("--weights is required unless --interpret-report is set")
 
     dataset_yaml = _resolve_dataset_yaml(args.dataset_root)
     config = ValidateConfig(
@@ -108,7 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         save_json=args.save_json,
     )
 
-    report = run_validation(config, dry_run=args.dry_run)
+    report = run_validation(
+        config, dry_run=args.dry_run, interpret=not args.no_interpret
+    )
     print(json.dumps(report, indent=2))
 
     if args.report_json:
