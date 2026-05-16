@@ -17,6 +17,7 @@ The following sections summarize the components and a conventional processing or
 | 7 | Train a YOLO26 segmentation model on the prepared dataset | `gdpr-yolo-train` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 8 | Validate a trained checkpoint and report mask + box mAP | `gdpr-yolo-validate` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 9 | Analyze FN/FP errors on validation split to guide labeling | `gdpr-yolo-analyze-errors` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 10 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -207,7 +208,38 @@ Typical sequence after error analysis:
 
 Use mask mAP@0.5:0.95 from validation as the gate before relying on masks for blur. The validation report `interpretation` block marks `ready_for_video_blur` when overall mask mAP is at least 0.30 (usable band). Below 0.30, prioritize labeling and training over predict or video steps.
 
-Removing files from train or val is manual and uncommon. Reserve it for corrupt frames, duplicates, or labels you will not fix. High false-negative counts usually mean the model or labels need improvement, not that the image should be dropped from the dataset.
+Removing files from train or val is uncommon. Reserve it for corrupt frames, duplicates, or labels you will not fix. High false-negative counts usually mean the model or labels need improvement, not that the image should be dropped from the dataset. When removal is appropriate, use `gdpr-yolo-clean` (see below) instead of deleting files by hand.
+
+`gdpr-yolo-clean` automates quarantine and run-folder cleanup when you choose to remove samples or reset Ultralytics output directories.
+
+Quarantine worst validation images from an error report (files move to `<path-to-dataset-root>/_quarantine/<timestamp>/` by default):
+
+```bash
+uv run gdpr-yolo-clean <path-to-dataset-root> \
+    --val --from-errors <path-to-runs-root>/error_analysis/errors.json \
+    --yes
+```
+
+Remove versioned train run folders and keep only the newest match (for example `yolo26n_seg_v1`, `yolo26n_seg_v1-2`, `yolo26n_seg_v1-3`):
+
+```bash
+uv run gdpr-yolo-clean --runs-dir <path-to-runs-root> \
+    --run-prefix yolo26n_seg_v1 --keep-latest --yes
+```
+
+Useful options:
+
+- `--train`, `--val` (or `--validation`), `--test`: splits to affect.
+- `--stems <stem>,<stem>`: explicit image stems.
+- `--from-errors <report.json>` and optional `--worst N`: stems from `summary.worst_images`.
+- `--all-in-split`: every image in the selected splits (requires `--yes`).
+- `--delete`: permanently delete instead of quarantine (requires `--yes`).
+- `--cache`: delete `labels/**/*.cache` after dataset changes.
+- `--run-names <name>,<name>`: remove explicit run subfolders under `--runs-dir`.
+- `--runs-all`: remove every run subfolder except names passed to `--keep`.
+- `--dry-run`: show the JSON plan without changing disk.
+
+Always run with `--dry-run` first. Destructive actions require `--yes`.
 
 ## Segmentator (Rust)
 

@@ -348,12 +348,27 @@ class _StubResult:
             self.boxes = None
 
 
+class _StubArray:
+    """Minimal array stand-in (avoids numpy when train extra is not installed)."""
+
+    def __init__(self, values: list[float]):
+        self._values = values
+
+    def flatten(self):
+        return self
+
+    def tolist(self) -> list[float]:
+        return list(self._values)
+
+    def item(self) -> float:
+        return float(self._values[0])
+
+
 class _StubMasks:
     """Stub for Ultralytics masks."""
 
     def __init__(self, xy_data: list[list[float]]):
-        import numpy as np
-        self.xy = [np.array(poly) for poly in xy_data]
+        self.xy = [_StubArray(poly) for poly in xy_data]
 
 
 class _StubBoxes:
@@ -363,15 +378,14 @@ class _StubBoxes:
         self.data = list(zip(classes, confs))
 
     def __iter__(self):
-        import numpy as np
         for cls, conf in self.data:
-            yield _StubBox(np.array([cls]), np.array([conf]))
+            yield _StubBox(_StubArray([float(cls)]), _StubArray([float(conf)]))
 
 
 class _StubBox:
     """Stub for a single box."""
 
-    def __init__(self, cls_array, conf_array):
+    def __init__(self, cls_array: _StubArray, conf_array: _StubArray):
         self.cls = cls_array
         self.conf = conf_array
 
