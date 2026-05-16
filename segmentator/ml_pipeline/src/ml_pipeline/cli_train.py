@@ -64,6 +64,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Resume training from the run referenced by --project and --name.",
     )
     parser.add_argument(
+        "--exist-ok",
+        action="store_true",
+        help=(
+            "Reuse <project>/<name> even when that folder already exists. "
+            "Default: Ultralytics creates suffixed names (name-2, name-3, ...)."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the resolved training kwargs without invoking ultralytics.",
@@ -102,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         save_period=args.save_period,
         workers=args.workers,
         resume=args.resume,
+        exist_ok=args.exist_ok,
     )
 
     report = run_training(config, dry_run=args.dry_run)

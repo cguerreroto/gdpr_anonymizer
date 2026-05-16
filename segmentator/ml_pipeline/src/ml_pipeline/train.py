@@ -34,6 +34,7 @@ class TrainConfig:
     save_period: int = -1
     workers: int = 8
     resume: bool = False
+    exist_ok: bool = False
     weights: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -64,6 +65,7 @@ def build_train_kwargs(config: TrainConfig) -> dict[str, Any]:
         "save_period": config.save_period,
         "workers": config.workers,
         "resume": config.resume,
+        "exist_ok": config.exist_ok,
         "task": "segment",
     }
     if config.device is not None:

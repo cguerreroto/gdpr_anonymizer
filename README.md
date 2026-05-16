@@ -108,7 +108,10 @@ Useful options:
 - `--device <id|cpu|mps>`: override the device autoselect.
 - `--patience <n>` and `--save-period <n>`: early stopping and intermediate checkpoint cadence.
 - `--resume`: continue an interrupted run with the same `--project` and `--name`.
+- `--exist-ok`: keep outputs under `<project>/<name>` when that folder already exists. Without this flag, Ultralytics creates suffixed run folders (`name-2`, `name-3`, ...).
 - `--dry-run`: print the resolved Ultralytics arguments without invoking training; useful before long jobs.
+
+After a successful run, the JSON report includes `save_dir` and `validate_weights` (path to `weights/best.pt` under `save_dir`). Use `validate_weights` for `gdpr-yolo-validate --weights`.
 
 Run outputs and downloaded weights are git-ignored (`runs/`, `*.pt`, `*.onnx`).
 

@@ -62,7 +62,14 @@ def test_build_train_kwargs_defaults(tmp_path: Path) -> None:
     assert kwargs["epochs"] == 100
     assert kwargs["imgsz"] == 640
     assert kwargs["name"] == "yolo26n_seg"
+    assert kwargs["exist_ok"] is False
     assert "device" not in kwargs
+
+
+def test_build_train_kwargs_exist_ok(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.exist_ok = True
+    assert build_train_kwargs(config)["exist_ok"] is True
 
 
 def test_build_train_kwargs_respects_device_and_extra(tmp_path: Path) -> None:
@@ -163,6 +170,22 @@ def test_run_training_uses_warm_start_weights(tmp_path: Path) -> None:
 
     run_training(config, model_factory=_factory, dry_run=False)
     assert seen["ref"] == str(weights)
+
+
+def test_cli_dry_run_exist_ok(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "dataset.yaml").write_text("path: .\n", encoding="utf-8")
+    code = cli_main(
+        [
+            str(tmp_path),
+            "--dry-run",
+            "--exist-ok",
+            "--project",
+            str(tmp_path / "runs"),
+        ]
+    )
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["train_kwargs"]["exist_ok"] is True
 
 
 def test_cli_dry_run_prints_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
