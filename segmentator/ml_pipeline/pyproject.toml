@@ -12,8 +12,9 @@ gdpr-yolo-normalize-labels = "ml_pipeline.cli:main"
 gdpr-yolo-fix-dataset-yaml = "ml_pipeline.cli_dataset_yaml:main"
 gdpr-yolo-train = "ml_pipeline.cli_train:main"
 gdpr-yolo-validate = "ml_pipeline.cli_validate:main"
+gdpr-yolo-analyze-errors = "ml_pipeline.cli_errors:main"
 
-# gdpr-yolo-train and gdpr-yolo-validate: run `uv sync --extra train` in this directory.
+# gdpr-yolo-train, gdpr-yolo-validate, and gdpr-yolo-analyze-errors: run `uv sync --extra train` in this directory.
 [project.optional-dependencies]
 train = ["ultralytics>=8.3"]
 
