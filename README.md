@@ -17,7 +17,8 @@ The following sections summarize the components and a conventional processing or
 | 7 | Train a YOLO26 segmentation model on the prepared dataset | `gdpr-yolo-train` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 8 | Validate a trained checkpoint and report mask + box mAP | `gdpr-yolo-validate` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 9 | Analyze FN/FP errors on validation split to guide labeling | `gdpr-yolo-analyze-errors` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
-| 10 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 10 | Predict on still images and save overlays for human review | `gdpr-yolo-predict` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 11 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -191,6 +192,35 @@ The JSON report includes:
 - `summary.worst_images`: list of up to 20 images with the most errors, sorted by total error count.
 
 Use FN counts to prioritize which class needs more labeled examples. Use the worst images list to identify problematic frames for manual review or re-annotation.
+
+## Predict on stills (`ml_pipeline`)
+
+`gdpr-yolo-predict` runs a trained checkpoint on a folder of still images (or a single image) and writes Ultralytics overlay images for human review. It is a sanity check before moving to the video pipeline.
+
+The command accepts an image file or a directory and recurses into subdirectories. Overlays go under `<project>/<name>/`. Optional `--save-polygons` writes predicted masks as YOLO polygon `.txt` files under `<project>/<name>/polygons/<stem>.txt` for downstream non-Python tooling.
+
+Run a predict pass (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+
+```bash
+uv run gdpr-yolo-predict <path-to-runs-root>/yolo26n_seg_v1/weights/best.pt \
+    --source <path-to-frames-folder> \
+    --imgsz 640 --conf 0.25 --iou 0.7 \
+    --project <path-to-runs-root> --name yolo26n_seg_predict \
+    --report-json <path-to-runs-root>/yolo26n_seg_predict/predictions.json
+```
+
+Useful options:
+
+- `--conf <float>`: detection confidence threshold (default 0.25).
+- `--iou <float>`: NMS IoU threshold (default 0.7).
+- `--classes 0,1`: keep only the listed class ids.
+- `--device <id|cpu|mps>`: override device autoselect.
+- `--no-overlays`: skip overlay images (set `save=False` on Ultralytics).
+- `--save-polygons`: also export YOLO polygon `.txt` files for predicted masks.
+- `--exist-ok`: reuse `<project>/<name>` instead of creating a suffixed copy.
+- `--dry-run`: print resolved kwargs without invoking Ultralytics.
+
+The JSON report includes a `summary` block with `image_count`, `images_with_detections`, `total_detections`, and `detections_by_class`. Use this to spot frames where the model misses the target classes before video processing.
 
 ### Manual dataset cleaning (researcher workflow)
 
