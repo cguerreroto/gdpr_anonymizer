@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
-
+from ml_pipeline.checkpoints import missing_weights_message
 from ml_pipeline.train import materialize_resolved_dataset_yaml
 
 
@@ -67,8 +67,9 @@ def validate_inputs(config: ValidateConfig) -> None:
         msg = f"Missing dataset.yaml at {config.dataset_yaml}"
         raise FileNotFoundError(msg)
     if not config.weights.is_file():
-        msg = f"Missing weights at {config.weights}"
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(
+            missing_weights_message(config.weights, config.project)
+        )
     if config.split not in VALID_SPLITS:
         msg = (
             f"Unknown split '{config.split}'. Expected one of: "
@@ -179,7 +180,9 @@ def run_validation(
         the lazy Ultralytics loader. Tests pass a stub.
     dry_run:
         When true, only build the kwargs and skip the call to ``val``.
+
     """
+    
     validate_inputs(config)
     kwargs = build_val_kwargs(config)
     weights_ref = str(config.weights)

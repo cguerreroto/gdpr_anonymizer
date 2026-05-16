@@ -119,6 +119,24 @@ def test_validate_inputs_rejects_missing_files(tmp_path: Path) -> None:
         validate_inputs(cfg)
 
 
+def test_validate_inputs_lists_checkpoints_under_project(tmp_path: Path) -> None:
+    (tmp_path / "dataset.yaml").write_text("path: .\n", encoding="utf-8")
+    project = tmp_path / "runs"
+    best = project / "yolo26n_seg_v1-3" / "weights" / "best.pt"
+    best.parent.mkdir(parents=True)
+    best.write_bytes(b"")
+    cfg = ValidateConfig(
+        weights=project / "yolo26n_seg_v1" / "weights" / "best.pt",
+        dataset_yaml=tmp_path / "dataset.yaml",
+        project=project,
+    )
+    with pytest.raises(FileNotFoundError) as exc_info:
+        validate_inputs(cfg)
+    message = str(exc_info.value)
+    assert "yolo26n_seg_v1-3" in message
+    assert "validate_weights" in message
+
+
 def test_validate_inputs_rejects_unknown_split(tmp_path: Path) -> None:
     cfg = _make_config(tmp_path)
     cfg.split = "foo"

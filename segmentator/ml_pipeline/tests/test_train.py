@@ -36,7 +36,11 @@ class _StubModel:
     def train(self, **kwargs: Any) -> _StubResults:
         self.train_kwargs = kwargs
         project = Path(kwargs["project"])
-        return _StubResults(project / kwargs["name"])
+        save_dir = project / kwargs["name"]
+        weights_dir = save_dir / "weights"
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        (weights_dir / "best.pt").write_bytes(b"")
+        return _StubResults(save_dir)
 
 
 def _make_config(tmp_path: Path) -> TrainConfig:
@@ -112,6 +116,7 @@ def test_run_training_invokes_factory_and_train(tmp_path: Path) -> None:
     assert last_model["m"].train_kwargs is not None
     assert last_model["m"].train_kwargs["task"] == "segment"
     assert report["save_dir"].endswith("yolo26n_seg")
+    assert report["validate_weights"].endswith("weights/best.pt")
     resolved = Path(report["resolved_dataset_yaml"])
     assert resolved.is_file()
     assert last_model["m"].train_kwargs["data"] == str(resolved)

@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
 import yaml
+from ml_pipeline.checkpoints import best_pt_in_run_dir
 
 
 class _ModelLike(Protocol):
@@ -178,9 +179,14 @@ def run_training(
 
     save_dir = getattr(results, "save_dir", None)
     if save_dir is not None:
-        report["save_dir"] = str(save_dir)
+        save_dir_path = Path(save_dir)
     else:
-        report["save_dir"] = str(config.project / config.name)
+        save_dir_path = config.project / config.name
+    report["save_dir"] = str(save_dir_path.resolve())
+
+    best_pt = best_pt_in_run_dir(save_dir_path)
+    if best_pt is not None:
+        report["validate_weights"] = str(best_pt.resolve())
     return report
 
 
