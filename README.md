@@ -64,6 +64,16 @@ Run:
 uv run gdpr-yolo-normalize-labels <path-to-dataset-root>
 ```
 
+### Ultralytics for train and validate (`ml_pipeline`)
+
+Commands `gdpr-yolo-train` and `gdpr-yolo-validate` need the optional `[train]` dependency group (Ultralytics and PyTorch). Layout and `dataset.yaml` tools work after `uv sync` alone. Before every training or validation session, from `segmentator/ml_pipeline`:
+
+```bash
+uv sync --extra train
+```
+
+A plain `uv sync` without `--extra train` removes Ultralytics from the local environment; `gdpr-yolo-train` and `gdpr-yolo-validate` then fail with an error that repeats the command above.
+
 Options include `--dry-run`, `--report-json <path>`, `--mode copy|move|symlink`, `--force`, and `--strict` (non-zero exit if any split has missing image–label pairs).
 
 The `move` mode deletes co-located `.txt` files from `images/<split>/`, which breaks workflows that only resolve labels next to image files (including the segmentator). The default `symlink` mode keeps a single on-disk file while exposing `labels/<split>/` paths.
@@ -87,13 +97,7 @@ The `gdpr-yolo-train` command launches a YOLO26 segmentation training run on the
 
 Before invoking Ultralytics, the CLI writes a copy of `dataset.yaml` named `dataset.resolved.yaml` inside the run directory, with `path` and any `train`, `val`, `test` entries rewritten to absolute paths anchored at the dataset root. Ultralytics resolves a relative `path` against its own dataset directory or the current working directory, so a yaml with `path: .` would otherwise fail when training is launched from outside the dataset folder. The original `dataset.yaml` is left untouched so it stays portable across machines.
 
-Ultralytics is declared as an optional install group so the rest of `ml_pipeline` stays lightweight. Install it once in the environment that will perform training:
-
-```bash
-uv sync --extra train
-```
-
-Run a training pass (from `segmentator/ml_pipeline`):
+Run a training pass (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
 
 ```bash
 uv run gdpr-yolo-train <path-to-dataset-root> \

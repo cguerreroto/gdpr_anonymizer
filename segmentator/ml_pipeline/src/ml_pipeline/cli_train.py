@@ -13,7 +13,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="gdpr-yolo-train",
         description=(
             "Train a YOLO26 segmentation model on a YOLO-style dataset. "
-            "Requires the ultralytics package; tests inject a stub factory."
+            "Requires Ultralytics (install from segmentator/ml_pipeline with "
+            "uv sync --extra train). Tests inject a stub factory."
         ),
     )
     parser.add_argument(

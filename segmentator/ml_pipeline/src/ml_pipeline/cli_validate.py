@@ -15,8 +15,9 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="gdpr-yolo-validate",
         description=(
             "Validate a trained YOLO26 segmentation model on a YOLO-style "
-            "dataset and print mask + box mAP. Requires the ultralytics "
-            "package; tests inject a stub factory."
+            "dataset and print mask + box mAP. Requires Ultralytics (install "
+            "from segmentator/ml_pipeline with uv sync --extra train). "
+            "Tests inject a stub factory."
         ),
     )
     parser.add_argument(

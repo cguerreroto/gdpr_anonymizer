@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 from ml_pipeline.checkpoints import missing_weights_message
 from ml_pipeline.train import materialize_resolved_dataset_yaml
+from ml_pipeline.ultralytics_extra import raise_ultralytics_missing
 
 
 class _ValModelLike(Protocol):
@@ -54,11 +55,7 @@ def _default_val_model_factory(weights_ref: str) -> _ValModelLike:
     try:
         from ultralytics import YOLO
     except ImportError as exc:
-        msg = (
-            "ultralytics is not installed. Install the optional [train] "
-            "extra (for example: uv sync --extra train) to run validation."
-        )
-        raise RuntimeError(msg) from exc
+        raise_ultralytics_missing(exc)
     return YOLO(weights_ref)
 
 

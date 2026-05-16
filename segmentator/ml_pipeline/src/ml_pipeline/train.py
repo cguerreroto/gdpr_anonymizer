@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 import yaml
 from ml_pipeline.checkpoints import best_pt_in_run_dir
+from ml_pipeline.ultralytics_extra import raise_ultralytics_missing
 
 
 class _ModelLike(Protocol):
@@ -44,11 +45,7 @@ def _default_model_factory(model_ref: str) -> _ModelLike:
     try:
         from ultralytics import YOLO
     except ImportError as exc:
-        msg = (
-            "ultralytics is not installed. Install it in this environment "
-            "(for example: uv add ultralytics) to run training."
-        )
-        raise RuntimeError(msg) from exc
+        raise_ultralytics_missing(exc)
     return YOLO(model_ref)
 
 

@@ -18,7 +18,7 @@ Rust/egui desktop application for curating YOLO segmentation datasets. It helps 
 
 ## ml_pipeline (Python)
 
-The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` (label layout audit), `gdpr-yolo-fix-dataset-yaml` (`nc`, `names`, split paths, validation carving), `gdpr-yolo-train` (YOLO26 segmentation training), and `gdpr-yolo-validate` (mask + box mAP on a trained checkpoint). Install with `uv sync` from `segmentator/ml_pipeline` (add `--extra train` to pull in Ultralytics for the training and validation CLIs). Run `uv run --group dev pytest` from the same directory to execute the package unit tests, including the mocked training and validation tests. See the repository root `README.md` for the full command line reference.
+The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` (label layout audit), `gdpr-yolo-fix-dataset-yaml` (`nc`, `names`, split paths, validation carving), `gdpr-yolo-train` (YOLO26 segmentation training), and `gdpr-yolo-validate` (mask + box mAP on a trained checkpoint). From `segmentator/ml_pipeline`, run `uv sync` for layout and yaml tools. Before `gdpr-yolo-train` or `gdpr-yolo-validate`, run `uv sync --extra train` so Ultralytics stays installed (a plain `uv sync` drops that extra). Run `uv run --group dev pytest` from the same directory to execute the package unit tests. See the repository root `README.md` for the full command line reference.
 
 ## Development
 - Rust edition 2021; dependencies include `eframe`, `egui`, `serde_yaml_ng`, `futures`, and `notify`.
