@@ -18,7 +18,7 @@ Rust/egui desktop application for curating YOLO segmentation datasets. It helps 
 
 ## ml_pipeline (Python)
 
-The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` (label layout audit) and `gdpr-yolo-fix-dataset-yaml` (`nc`, `names`, split paths). Install with `uv sync` from `segmentator/ml_pipeline`, then see the repository root `README.md` for the command line.
+The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` (label layout audit), `gdpr-yolo-fix-dataset-yaml` (`nc`, `names`, split paths, validation carving), and `gdpr-yolo-train` (YOLO26 segmentation training). Install with `uv sync` from `segmentator/ml_pipeline` (add `--extra train` to pull in Ultralytics for the training CLI). Run `uv run --group dev pytest` from the same directory to execute the package unit tests, including the mocked training tests. See the repository root `README.md` for the full command line reference.
 
 ## Development
 - Rust edition 2021; dependencies include `eframe`, `egui`, `serde_yaml_ng`, `futures`, and `notify`.

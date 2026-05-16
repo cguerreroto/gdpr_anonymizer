@@ -14,6 +14,7 @@ The following sections summarize the components and a conventional processing or
 | 4 | Build an augmented copy of the labeled dataset | `yolo-augmentor` | [`extractor/yolo_raw_extractor`](extractor/yolo_raw_extractor) |
 | 5 | Audit dataset and mirror labels into `labels/<split>/` | `gdpr-yolo-normalize-labels` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 6 | Audit and fix `dataset.yaml` (`nc`, `names`, splits) | `gdpr-yolo-fix-dataset-yaml` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 7 | Train a YOLO26 segmentation model on the prepared dataset | `gdpr-yolo-train` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -78,6 +79,37 @@ uv run gdpr-yolo-fix-dataset-yaml <path-to-dataset-root> --apply
 ```
 
 Use `--strict` to exit with a non-zero status when issues remain. Use `--carve-val-fraction` with `--carve-seed` and optionally `--carve-move` when building a validation split from train.
+
+## Training (`ml_pipeline`)
+
+The `gdpr-yolo-train` command launches a YOLO26 segmentation training run on the dataset described by `dataset.yaml`. The training task is fixed to `segment`, and the default base model is `yolo26n-seg.pt`. The run writes checkpoints and logs under `<project>/<name>/`, where both values default to `runs/yolo26n_seg`. The CLI prints a JSON report describing the resolved arguments (and the save directory once training completes) and accepts `--report-json` to persist that report next to the run.
+
+Before invoking Ultralytics, the CLI writes a copy of `dataset.yaml` named `dataset.resolved.yaml` inside the run directory, with `path` and any `train`, `val`, `test` entries rewritten to absolute paths anchored at the dataset root. Ultralytics resolves a relative `path` against its own dataset directory or the current working directory, so a yaml with `path: .` would otherwise fail when training is launched from outside the dataset folder. The original `dataset.yaml` is left untouched so it stays portable across machines.
+
+Ultralytics is declared as an optional install group so the rest of `ml_pipeline` stays lightweight. Install it once in the environment that will perform training:
+
+```bash
+uv sync --extra train
+```
+
+Run a training pass (from `segmentator/ml_pipeline`):
+
+```bash
+uv run gdpr-yolo-train <path-to-dataset-root> \
+    --epochs 100 --imgsz 640 --batch 16 \
+    --project <path-to-runs-root> --name yolo26n_seg_v1
+```
+
+Useful options:
+
+- `--model <name-or-path>`: select another YOLO26 segmentation weight (default `yolo26n-seg.pt`).
+- `--weights <path>`: warm-start from a previous `best.pt` instead of the base model.
+- `--device <id|cpu|mps>`: override the device autoselect.
+- `--patience <n>` and `--save-period <n>`: early stopping and intermediate checkpoint cadence.
+- `--resume`: continue an interrupted run with the same `--project` and `--name`.
+- `--dry-run`: print the resolved Ultralytics arguments without invoking training; useful before long jobs.
+
+Run outputs and downloaded weights are git-ignored (`runs/`, `*.pt`, `*.onnx`).
 
 ## Segmentator (Rust)
 
