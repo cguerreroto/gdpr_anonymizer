@@ -15,6 +15,7 @@ The following sections summarize the components and a conventional processing or
 | 5 | Audit dataset and mirror labels into `labels/<split>/` | `gdpr-yolo-normalize-labels` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 6 | Audit and fix `dataset.yaml` (`nc`, `names`, splits) | `gdpr-yolo-fix-dataset-yaml` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 7 | Train a YOLO26 segmentation model on the prepared dataset | `gdpr-yolo-train` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 8 | Validate a trained checkpoint and report mask + box mAP | `gdpr-yolo-validate` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -110,6 +111,38 @@ Useful options:
 - `--dry-run`: print the resolved Ultralytics arguments without invoking training; useful before long jobs.
 
 Run outputs and downloaded weights are git-ignored (`runs/`, `*.pt`, `*.onnx`).
+
+## Validation (`ml_pipeline`)
+
+The `gdpr-yolo-validate` command runs Ultralytics `model.val(...)` on a trained checkpoint and prints a JSON summary of segmentation quality. The task is fixed to `segment`. By default the command evaluates on the `val` split; `--split test` and `--split train` are also accepted.
+
+Reported metrics (when the installed Ultralytics version exposes them):
+
+- Mask mAP at IoU 0.5:0.95, 0.5, and 0.75.
+- Box mAP at IoU 0.5:0.95 and 0.5 (auxiliary signal).
+- Per-class mAP for both mask and box, keyed by the names declared in `dataset.yaml`.
+
+Per-class numbers are the primary signal for deciding whether to add more annotated frames for a specific class (for example license plates versus people). Mask mAP is the headline metric since the downstream pipeline blurs masks rather than bounding boxes.
+
+Run a validation pass (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+
+```bash
+uv run gdpr-yolo-validate <path-to-dataset-root> \
+    --weights <path-to-runs-root>/yolo26n_seg_v1/weights/best.pt \
+    --imgsz 640 --batch 16 \
+    --project <path-to-runs-root> --name yolo26n_seg_v1_val \
+    --report-json <path-to-runs-root>/yolo26n_seg_v1_val/metrics.json
+```
+
+Useful options:
+
+- `--split val|test|train`: choose the split to evaluate (default `val`).
+- `--conf <float>` and `--iou <float>`: override Ultralytics defaults for confidence and NMS IoU thresholds.
+- `--device <id|cpu|mps>`: override the device autoselect.
+- `--save-json`: forward `save_json=True` to Ultralytics so it emits COCO-format predictions next to the val output.
+- `--dry-run`: print the resolved Ultralytics arguments without invoking validation.
+
+The same `dataset.resolved.yaml` rewrite used at training time is performed before validation, so the command also works when launched from outside the dataset directory.
 
 ## Segmentator (Rust)
 
