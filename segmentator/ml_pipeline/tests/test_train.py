@@ -119,7 +119,9 @@ def test_run_training_invokes_factory_and_train(tmp_path: Path) -> None:
 
 def test_materialize_resolved_dataset_yaml_rewrites_paths(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    resolved = materialize_resolved_dataset_yaml(config)
+    resolved = materialize_resolved_dataset_yaml(
+        config.dataset_yaml, config.project / config.name
+    )
     assert resolved.is_file()
     data = yaml.safe_load(resolved.read_text(encoding="utf-8"))
     assert data["path"] == str(tmp_path.resolve())
@@ -134,11 +136,10 @@ def test_materialize_resolved_dataset_yaml_handles_missing_path_field(tmp_path: 
         "train: images/train\nval: images/val\n",
         encoding="utf-8",
     )
-    config = TrainConfig(
-        dataset_yaml=tmp_path / "dataset.yaml",
-        project=tmp_path / "runs",
+    output_dir = tmp_path / "runs" / "out"
+    resolved = materialize_resolved_dataset_yaml(
+        tmp_path / "dataset.yaml", output_dir
     )
-    resolved = materialize_resolved_dataset_yaml(config)
     data = yaml.safe_load(resolved.read_text(encoding="utf-8"))
     assert data["path"] == str(tmp_path.resolve())
     assert data["val"] == str((tmp_path / "images" / "val").resolve())

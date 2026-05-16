@@ -89,24 +89,19 @@ def validate_dataset_yaml(config: TrainConfig) -> None:
 
 
 def materialize_resolved_dataset_yaml(
-    config: TrainConfig,
-    *,
-    output_dir: Path | None = None,
+    dataset_yaml: Path,
+    output_dir: Path,
 ) -> Path:
     """Write a copy of ``dataset.yaml`` with absolute paths.
 
-    Since Ultralytics depends on the YAML file information, 
-    and this file is located outside of the dataset root, 
-    this part helps Ultralytics find the dataset.
-    Ultralytics resolves a relative ``path`` field against ``DATASETS_DIR`` or
-    the current working directory, which is fragile when the training command
-    is launched from a folder other than the dataset root. The resolved copy
-    has ``path`` rewritten to the absolute dataset root and any per-split
-    entry rewritten to an absolute path on disk when it can be resolved
-    against the original ``path``. 
-    The original ``dataset.yaml`` remainsuntouched 
+    Ultralytics resolves a relative ``path`` field against ``DATASETS_DIR``
+    or the current working directory, which is fragile when training or
+    validation is launched from a folder other than the dataset root. The
+    resolved copy has ``path`` rewritten to the absolute dataset root and
+    any per-split entry rewritten to an absolute path on disk. The original
+    ``dataset.yaml`` is not modified, so it stays portable across machines.
     """
-    src_yaml = config.dataset_yaml.resolve()
+    src_yaml = dataset_yaml.resolve()
     with src_yaml.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
 
@@ -131,9 +126,8 @@ def materialize_resolved_dataset_yaml(
             split_path = (dataset_root / split_path).resolve()
         data[split_key] = str(split_path)
 
-    target_dir = output_dir or (config.project / config.name)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / "dataset.resolved.yaml"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = output_dir / "dataset.resolved.yaml"
     with target.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(data, handle, sort_keys=False)
     return target
@@ -171,7 +165,9 @@ def run_training(
     if dry_run:
         return report
 
-    resolved_yaml = materialize_resolved_dataset_yaml(config)
+    resolved_yaml = materialize_resolved_dataset_yaml(
+        config.dataset_yaml, config.project / config.name
+    )
     kwargs["data"] = str(resolved_yaml)
     report["resolved_dataset_yaml"] = str(resolved_yaml)
     report["train_kwargs"] = kwargs
