@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
 from ml_pipeline.checkpoints import missing_weights_message
+from ml_pipeline.export_extra import ensure_onnx_export_requirements
 from ml_pipeline.ultralytics_extra import raise_ultralytics_missing
 
 
@@ -104,6 +105,8 @@ def validate_export_inputs(config: ExportConfig) -> None:
         raise ValueError("--batch must be a positive integer.")
     if config.half and config.int8:
         raise ValueError("--half and --int8 cannot be combined.")
+    if fmt == "onnx":
+        ensure_onnx_export_requirements()
     if fmt == "engine" and config.device == "cpu":
         msg = "TensorRT engine export requires a CUDA device, not 'cpu'."
         raise ValueError(msg)

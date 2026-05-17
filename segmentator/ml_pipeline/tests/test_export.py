@@ -82,6 +82,27 @@ def test_build_export_kwargs_normalizes_format_case(tmp_path: Path) -> None:
     assert kwargs["format"] == "onnx"
 
 
+def test_validate_export_inputs_requires_onnx_stack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _make_config(tmp_path)
+
+    def fake_ensure() -> None:
+        raise RuntimeError("install export extra")
+
+    monkeypatch.setattr(
+        "ml_pipeline.export.ensure_onnx_export_requirements", fake_ensure
+    )
+    with pytest.raises(RuntimeError, match="install export extra"):
+        validate_export_inputs(cfg)
+
+
+def test_export_onnx_missing_message() -> None:
+    from ml_pipeline.export_extra import EXPORT_ONNX_MISSING_MESSAGE
+
+    assert "uv sync --extra train --extra export" in EXPORT_ONNX_MISSING_MESSAGE
+
+
 def test_validate_export_inputs_rejects_missing_weights(tmp_path: Path) -> None:
     cfg = ExportConfig(weights=tmp_path / "missing.pt")
     with pytest.raises(FileNotFoundError, match="Missing weights"):
