@@ -17,6 +17,7 @@ gdpr-yolo-predict = "ml_pipeline.cli_predict:main"
 gdpr-yolo-export = "ml_pipeline.cli_export:main"
 gdpr-yolo-blur-video = "ml_pipeline.cli_video:main"
 gdpr-yolo-clean = "ml_pipeline.cli_clean:main"
+gdpr-yolo-iterate = "ml_pipeline.cli_iterate:main"
 
 # Ultralytics CLIs: `uv sync --extra train`. ONNX export also needs: `uv sync --extra export` (or both extras together).
 [project.optional-dependencies]
