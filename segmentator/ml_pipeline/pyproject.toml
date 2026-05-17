@@ -14,9 +14,10 @@ gdpr-yolo-train = "ml_pipeline.cli_train:main"
 gdpr-yolo-validate = "ml_pipeline.cli_validate:main"
 gdpr-yolo-analyze-errors = "ml_pipeline.cli_errors:main"
 gdpr-yolo-predict = "ml_pipeline.cli_predict:main"
+gdpr-yolo-export = "ml_pipeline.cli_export:main"
 gdpr-yolo-clean = "ml_pipeline.cli_clean:main"
 
-# gdpr-yolo-train, gdpr-yolo-validate, gdpr-yolo-analyze-errors, and gdpr-yolo-predict: run `uv sync --extra train` in this directory.
+# gdpr-yolo-train, gdpr-yolo-validate, gdpr-yolo-analyze-errors, gdpr-yolo-predict, and gdpr-yolo-export: run `uv sync --extra train` in this directory.
 [project.optional-dependencies]
 train = ["ultralytics>=8.3"]
 
