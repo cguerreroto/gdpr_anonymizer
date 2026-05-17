@@ -21,6 +21,7 @@ The following sections summarize the components and a conventional processing or
 | 11 | Export trained checkpoint to ONNX or other portable formats | `gdpr-yolo-export` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 12 | Blur or pixelate predicted masks in a video and write a new file | `gdpr-yolo-blur-video` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 13 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 14 | Warm-start a new training run from a previous `best.pt` and compare metrics | `gdpr-yolo-iterate` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -346,6 +347,49 @@ Useful options:
 - `--dry-run`: show the JSON plan without changing disk.
 
 Always run with `--dry-run` first. Destructive actions require `--yes`.
+
+## Iteration and warm-start (`ml_pipeline`)
+
+`gdpr-yolo-iterate` packages the most common research loop into one command: warm-start a new YOLO26-seg training run from a previous run's `weights/best.pt`, optionally re-validate against the same split, and produce a JSON delta against a prior validation report. The command does not invent dataset paths or version names. It reads the previous run directory, derives the next run name from the existing one, and forwards through the same `gdpr-yolo-train` and `gdpr-yolo-validate` drivers.
+
+Run name derivation:
+
+- `<base>_vN` becomes `<base>_v<N+1>` (for example `yolo26n_seg_v1` → `yolo26n_seg_v2`).
+- A trailing Ultralytics auto-suffix (`-2`, `-3`, ...) is stripped before the bump (so `yolo26n_seg_v1-3` also becomes `yolo26n_seg_v2`).
+- A name without a `_vN` suffix gets `_v2` appended.
+
+Use `--name` to override the derived name explicitly. The new run is written to `<project>/<new-name>/`; `--project` defaults to the parent of the previous run directory, so iterations land next to each other.
+
+Run an iteration (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+
+```bash
+uv run gdpr-yolo-iterate <path-to-runs-root>/yolo26n_seg_v1 <path-to-dataset-root> \
+    --epochs 100 --imgsz 640 --batch 16 \
+    --compare-to <path-to-runs-root>/yolo26n_seg_v1_val/metrics.json \
+    --report-json <path-to-runs-root>/yolo26n_seg_v2/iterate.json
+```
+
+Useful options:
+
+- `--name <run-name>`: override the derived name.
+- `--project <path>`: override the run parent directory (default: the previous run's parent).
+- `--epochs <n>`, `--imgsz <int>`, `--batch <int>`, `--device <id|cpu|mps>`, `--patience <n>`, `--save-period <n>`, `--workers <n>`, `--exist-ok`: forwarded to `gdpr-yolo-train`.
+- `--skip-validation`: train only; do not run `gdpr-yolo-validate` after training.
+- `--val-name <run-name>`: validation run name (default: `<new-name>_val`).
+- `--val-split val|test|train`: split to validate against (default: `val`). For comparable curves, keep the same split between iterations.
+- `--compare-to <path>`: previous validation JSON. The new validation metrics are diffed against this file (overall mask + box mAP and per-class) with verdicts `improved`, `regressed`, `unchanged`, or `unknown`.
+- `--dry-run`: print the resolved train (and val) kwargs without invoking Ultralytics.
+- `--report-json <path>`: write the full iteration report to disk.
+
+The JSON report includes:
+
+- `previous_weights`, `next_run_name`, `next_project`: resolved paths and the derived name.
+- `train_report`: the full `gdpr-yolo-train` JSON report (with `save_dir` and `validate_weights`).
+- `validate_report`: the full `gdpr-yolo-validate` JSON report (metrics + interpretation).
+- `comparison.overall`, `comparison.per_class`: deltas per metric (`previous`, `current`, `delta`, `verdict`).
+- `comparison.overall_verdict`, `comparison.summary`: a single verdict for mask mAP@0.5:0.95 and a one-line text summary.
+
+For comparable iteration curves, freeze the validation split (`val` in `dataset.yaml`) between runs and use the same `--imgsz` so val metrics are directly comparable. If you change the split or augmentation, treat the next iteration as a new baseline.
 
 ## Segmentator (Rust)
 
