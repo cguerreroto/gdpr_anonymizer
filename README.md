@@ -18,7 +18,8 @@ The following sections summarize the components and a conventional processing or
 | 8 | Validate a trained checkpoint and report mask + box mAP | `gdpr-yolo-validate` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 9 | Analyze FN/FP errors on validation split to guide labeling | `gdpr-yolo-analyze-errors` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 10 | Predict on still images and save overlays for human review | `gdpr-yolo-predict` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
-| 11 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 11 | Export trained checkpoint to ONNX or other portable formats | `gdpr-yolo-export` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 12 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -221,6 +222,35 @@ Useful options:
 - `--dry-run`: print resolved kwargs without invoking Ultralytics.
 
 The JSON report includes a `summary` block with `image_count`, `images_with_detections`, `total_detections`, and `detections_by_class`. Use this to spot frames where the model misses the target classes before video processing.
+
+## Export (`ml_pipeline`)
+
+`gdpr-yolo-export` converts a trained `.pt` checkpoint to a portable runtime format. ONNX is the default because it runs in many runtimes without a CUDA toolchain. Other formats supported by Ultralytics (`torchscript`, `engine`, `coreml`, `openvino`, `tflite`, ...) are accepted as opt-in values.
+
+Ultralytics writes the exported artifact next to the source weights (for example `weights/best.onnx` next to `weights/best.pt`). The CLI prints a JSON report with the resolved kwargs, the resolved output path, and whether the file was created.
+
+Run an export (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+
+```bash
+uv run gdpr-yolo-export <path-to-runs-root>/yolo26n_seg_v1/weights/best.pt \
+    --format onnx --imgsz 640 --batch 1 \
+    --report-json <path-to-runs-root>/yolo26n_seg_v1/weights/export.json
+```
+
+Useful options:
+
+- `--format <name>`: target format (default `onnx`; full list shown by `--help`).
+- `--imgsz <int>`: inference size baked into the export (default 640).
+- `--batch <int>`: batch size baked into the export (default 1).
+- `--half` or `--int8`: precision flags (mutually exclusive).
+- `--dynamic`: enable dynamic input axes (ONNX, TensorRT).
+- `--no-simplify`: disable ONNX graph simplification.
+- `--opset <int>`: override the ONNX opset version.
+- `--nms`: embed NMS in the exported model when supported by the format.
+- `--device <id|cpu|mps>`: override device autoselect (TensorRT requires a CUDA device).
+- `--dry-run`: print resolved kwargs without invoking Ultralytics.
+
+Exported artifacts are git-ignored alongside `*.pt` and `runs/`.
 
 ### Manual dataset cleaning (researcher workflow)
 
