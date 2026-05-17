@@ -19,7 +19,8 @@ The following sections summarize the components and a conventional processing or
 | 9 | Analyze FN/FP errors on validation split to guide labeling | `gdpr-yolo-analyze-errors` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 10 | Predict on still images and save overlays for human review | `gdpr-yolo-predict` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 | 11 | Export trained checkpoint to ONNX or other portable formats | `gdpr-yolo-export` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
-| 12 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 12 | Blur or pixelate predicted masks in a video and write a new file | `gdpr-yolo-blur-video` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
+| 13 | Quarantine dataset samples or remove old Ultralytics run folders | `gdpr-yolo-clean` | [`segmentator/ml_pipeline`](segmentator/ml_pipeline) |
 
 The segmentator defaults to class index 0 = Person and 1 = Car. The `names` field in `dataset.yaml` must match the class indices present in the label files when the dataset is consumed by an external trainer.
 
@@ -229,7 +230,7 @@ The JSON report includes a `summary` block with `image_count`, `images_with_dete
 
 Ultralytics writes the exported artifact next to the source weights (for example `weights/best.onnx` next to `weights/best.pt`). The CLI prints a JSON report with the resolved kwargs, the resolved output path, and whether the file was created.
 
-Run an export (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+Run an export (from `segmentator/ml_pipeline`, after `uv sync --extra train --extra export`):
 
 ```bash
 uv run gdpr-yolo-export <path-to-runs-root>/yolo26n_seg_v1/weights/best.pt \
@@ -250,7 +251,52 @@ Useful options:
 - `--device <id|cpu|mps>`: override device autoselect (TensorRT requires a CUDA device).
 - `--dry-run`: print resolved kwargs without invoking Ultralytics.
 
+ONNX export needs the optional `[export]` group (`onnx`, `onnxslim`, `onnxruntime`). Ultralytics cannot install these automatically in a uv-managed environment. Install both extras before exporting:
+
+```bash
+uv sync --extra train --extra export
+```
+
 Exported artifacts are git-ignored alongside `*.pt` and `runs/`.
+
+## Video blur (`ml_pipeline`)
+
+`gdpr-yolo-blur-video` runs YOLO26 segmentation on every frame of an input video and writes a copy where the union of predicted masks is blurred or pixelated. This is the privacy-oriented endpoint of the pipeline: faces (class 0) and vehicles or plates (class 1) are obscured before the video is shared.
+
+The OpenCV-backed loop reads frames with `cv2.VideoCapture`, runs `model.predict(frame, ...)`, builds a binary union mask from `result.masks.data` for the selected classes, and writes either Gaussian-blurred or pixelated content inside the masked regions back to disk via `cv2.VideoWriter`. The output container and codec are controlled by `--fourcc` and the path extension.
+
+Run the video blur pipeline (from `segmentator/ml_pipeline`, after `uv sync --extra train`):
+
+```bash
+uv run gdpr-yolo-blur-video <path-to-runs-root>/yolo26n_seg_v1/weights/best.pt \
+    --source "<path-to-your-actual-video-file>.mp4" \
+    --classes 0,1 --conf 0.25 --iou 0.7 --imgsz 640 \
+    --blur-method gaussian --blur-kernel 51 \
+    --report-json <path-to-runs-root>/blur/report.json
+```
+
+By default the blurred video is written next to the source as `{stem}_blurred{suffix}` (for example `clip.mp4` → `clip_blurred.mp4`). Pass `--output <directory>` to place the auto-named file elsewhere (for example `<path-to-runs-root>/blur`).
+
+Useful options:
+
+- `--output <dir|file>`: output directory or explicit file path (default: same folder as `--source` with `_blurred` in the filename).
+- `--classes <ids>`: comma-separated class ids to blur (default: every detected class).
+- `--blur-method gaussian|pixelate`: choice of obfuscation; pixelate uses `--pixelate-block`.
+- `--blur-kernel <odd int>`: Gaussian blur kernel size (must be odd).
+- `--blur-sigma <float>`: Gaussian blur sigma (0 lets OpenCV derive it).
+- `--mask-dilate <px>`: dilate the union mask before blurring (helps when predictions are tight).
+- `--conf <float>`, `--iou <float>`, `--imgsz <int>`: per-frame predict thresholds and size.
+- `--device <id|cpu|mps>`: override device autoselect.
+- `--fps <float>`: override the output FPS (default copies the source FPS).
+- `--fourcc <tag>`: OpenCV FourCC tag for the writer (default `mp4v`).
+- `--dry-run`: print the resolved kwargs without running the pipeline.
+- `--no-progress`: disable the stderr progress bar and status lines during processing.
+
+While a video is being blurred, the CLI prints status to stderr (model load, source/output paths) and updates a frame progress bar (`|====----| 120/500 (24%)`). The final JSON report still goes to stdout (or `--report-json`).
+
+The JSON report includes a `summary` block with `total_frames`, `frames_with_detections`, `frames_with_detections_pct`, `total_detections`, `detections_by_class`, and `average_mask_area_fraction`. These KPIs sit next to the validation mAP numbers and answer how often the model intervened on real footage and how much of each frame was masked.
+
+The output video is git-ignored alongside the rest of `runs/` and other large local artifacts. Refusing to overwrite the source is enforced.
 
 ### Manual dataset cleaning (researcher workflow)
 
