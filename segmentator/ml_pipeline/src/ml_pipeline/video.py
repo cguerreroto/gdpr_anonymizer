@@ -10,9 +10,10 @@ without OpenCV, NumPy, or a real video file.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol, TextIO
 
 from ml_pipeline.checkpoints import missing_weights_message
 from ml_pipeline.ultralytics_extra import raise_ultralytics_missing
@@ -85,6 +86,7 @@ class VideoBlurConfig:
     mask_dilate: int = 0
     fps_override: float | None = None
     fourcc: str = "mp4v"
+    show_progress: bool = True
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -97,6 +99,60 @@ VideoPipelineRunner = Callable[
     [_VideoModelLike, "VideoBlurConfig", dict[str, Any]],
     list[FrameStats],
 ]
+
+
+class FrameProgress:
+    """Simple stderr progress bar for per-frame video processing."""
+
+    def __init__(
+        self,
+        *,
+        total: int | None,
+        label: str = "Blurring frames",
+        enabled: bool = True,
+        stream: TextIO | None = None,
+        width: int = 36,
+    ) -> None:
+        self._total = total if total is not None and total > 0 else None
+        self._label = label
+        self._enabled = enabled
+        self._stream = stream if stream is not None else sys.stderr
+        self._width = width
+        self._current = 0
+
+    def update(self, current: int) -> None:
+        if not self._enabled:
+            return
+        self._current = current
+        self._stream.write(self._format_line())
+        self._stream.flush()
+
+    def close(self) -> None:
+        if not self._enabled:
+            return
+        self._stream.write("\n")
+        self._stream.flush()
+
+    def _format_line(self) -> str:
+        if self._total is not None:
+            bounded = min(self._current, self._total)
+            pct = int(100 * bounded / self._total)
+            filled = int(self._width * bounded / self._total)
+            bar = "=" * filled + "-" * (self._width - filled)
+            return (
+                f"\r{self._label}: |{bar}| "
+                f"{bounded}/{self._total} ({pct}%)"
+            )
+        return f"\r{self._label}: frame {self._current}"
+
+
+def log_video_status(message: str, *, enabled: bool = True, stream: TextIO | None = None) -> None:
+    """Print a one-line status message to stderr."""
+    if not enabled:
+        return
+    out = stream if stream is not None else sys.stderr
+    out.write(f"{message}\n")
+    out.flush()
 
 
 def _default_video_model_factory(weights_ref: str) -> _VideoModelLike:
@@ -248,10 +304,17 @@ def run_video_blur(
         return report
 
     factory = model_factory or _default_video_model_factory
+    if config.show_progress:
+        log_video_status(f"Loading model: {config.weights}")
     model = factory(weights_ref)
 
     runner = pipeline_runner or _default_video_pipeline_runner
+    if config.show_progress:
+        log_video_status(f"Source: {config.source}")
+        log_video_status(f"Output: {config.output}")
     frame_stats = list(runner(model, config, predict_kwargs))
+    if config.show_progress:
+        log_video_status("Done.")
 
     report["output"] = str(config.output)
     report["output_exists"] = config.output.exists()
@@ -373,12 +436,19 @@ def _default_video_pipeline_runner(
     stats: list[FrameStats] = []
     classes_filter = set(config.classes) if config.classes else None
     frame_pixels = max(1, width * height)
+    frame_count_raw = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    progress = FrameProgress(
+        total=frame_count_raw if frame_count_raw > 0 else None,
+        enabled=config.show_progress,
+    )
 
     try:
+        frame_index = 0
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
+            frame_index += 1
 
             results = model.predict(frame, **predict_kwargs)
             result = None
@@ -407,6 +477,7 @@ def _default_video_pipeline_runner(
                         frame_pixels=frame_pixels,
                     )
                 )
+                progress.update(frame_index)
                 continue
 
             union = _union_mask(
@@ -425,7 +496,9 @@ def _default_video_pipeline_runner(
                     frame_pixels=frame_pixels,
                 )
             )
+            progress.update(frame_index)
     finally:
+        progress.close()
         cap.release()
         writer.release()
 

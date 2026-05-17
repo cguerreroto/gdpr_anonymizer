@@ -144,6 +144,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print the resolved kwargs without running the pipeline.",
     )
     parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the stderr progress bar and status messages.",
+    )
+    parser.add_argument(
         "--report-json",
         type=Path,
         default=None,
@@ -177,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         mask_dilate=args.mask_dilate,
         fps_override=args.fps,
         fourcc=args.fourcc,
+        show_progress=not args.no_progress,
     )
 
     report = run_video_blur(config, dry_run=args.dry_run)
