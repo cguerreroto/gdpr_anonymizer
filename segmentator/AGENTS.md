@@ -16,6 +16,6 @@
 - Segment panel grid: per-segment row with ID, class combo, point count, Edit/Delete buttons; editing happens in center view only.
 
 # Operational Notes
-- Always run `cargo fmt` after code changes and check with `cargo clippy -D warnings`.
+- Always run `cargo fmt` after code changes and check with `cargo clippy -- -D warnings`.
 - Loading/saving uses `serde_yaml_ng`; image annotations serialize to YOLO polygon `.txt`.
 - Watcher triggers UI refreshes and image list updates; ensure locks are short-lived (prefer reads for display, writes only when mutating).

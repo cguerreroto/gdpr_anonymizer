@@ -22,5 +22,5 @@ The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` (label layout au
 
 ## Development
 - Rust edition 2021; dependencies include `eframe`, `egui`, `serde_yaml_ng`, `futures`, and `notify`.
-- Always run `cargo fmt` after making code changes and `cargo clippy -D warnings` to ensure lints stay clean.
+- Always run `cargo fmt` after making code changes and `cargo clippy -- -D warnings` to ensure lints stay clean.
 - Files of interest: `src/main.rs` (UI + event handling) and `src/dataset.rs` (dataset model, IO, watcher).

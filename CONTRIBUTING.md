@@ -98,7 +98,7 @@ From `segmentator/`:
 
 ```bash
 cargo fmt
-cargo clippy -D warnings
+cargo clippy -- -D warnings
 ```
 
 Follow existing patterns in `src/`. See [`segmentator/AGENTS.md`](segmentator/AGENTS.md) for component notes aimed at contributors working on the desktop app.
