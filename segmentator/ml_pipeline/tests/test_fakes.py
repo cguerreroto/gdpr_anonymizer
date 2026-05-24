@@ -7,8 +7,10 @@ from fakes import (
     FakeArray,
     FakeCapture,
     FakeWriter,
+    block_ultralytics_import,
     fake_segmentation_result,
     install_fake_cv2_numpy,
+    install_fake_ultralytics,
     make_fake_cv2_module,
     make_fake_numpy_module,
 )
@@ -72,3 +74,16 @@ def test_make_fake_modules_are_independent() -> None:
     np_b = make_fake_numpy_module()
     assert cv2_a is not cv2_b
     assert np_a is not np_b
+
+
+def test_install_fake_ultralytics_registers_yolo(monkeypatch: pytest.MonkeyPatch) -> None:
+    refs: list[str] = []
+    install_fake_ultralytics(
+        monkeypatch,
+        yolo_factory=lambda ref: refs.append(ref) or __import__("types").SimpleNamespace(ref=ref),
+    )
+    from ultralytics import YOLO
+
+    model = YOLO("demo.pt")
+    assert refs == ["demo.pt"]
+    assert model.ref == "demo.pt"

@@ -17,6 +17,7 @@ from ml_pipeline.video import (
     FrameStats,
     VideoBlurConfig,
     _apply_blur,
+    _default_video_model_factory,
     _default_video_pipeline_runner,
     _union_mask,
     aggregate_video_metrics,
@@ -32,8 +33,10 @@ from fakes import (
     FakeCapture,
     FakeTensor,
     FakeWriter,
+    block_ultralytics_import,
     fake_segmentation_result,
     install_fake_cv2_numpy,
+    install_fake_ultralytics,
     make_fake_cv2_module,
 )
 
@@ -535,6 +538,31 @@ def test_default_video_pipeline_runner_passthrough_when_class_filter_excludes_al
     assert stats[0].detection_classes == []
     assert holder["writer"] is not None
     assert holder["writer"].frames_written == [frame]
+
+
+def test_default_video_model_factory_loads_fake_yolo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refs: list[str] = []
+    install_fake_ultralytics(
+        monkeypatch,
+        yolo_factory=lambda ref: refs.append(ref) or _StubModel(ref),
+    )
+
+    model = _default_video_model_factory("weights/best.pt")
+
+    assert refs == ["weights/best.pt"]
+    assert isinstance(model, _StubModel)
+    assert model.ref == "weights/best.pt"
+
+
+def test_default_video_model_factory_surfaces_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block_ultralytics_import(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="uv sync --extra train"):
+        _default_video_model_factory("best.pt")
 
 
 def test_log_video_status_respects_enabled_flag(

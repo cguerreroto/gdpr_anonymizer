@@ -349,3 +349,39 @@ def fake_segmentation_result(
     boxes = SimpleNamespace(cls=class_values)
     mask_container = SimpleNamespace(data=mask_data)
     return SimpleNamespace(boxes=boxes, masks=mask_container)
+
+
+def make_fake_ultralytics_module(
+    *,
+    yolo_factory: Callable[[str], Any] | None = None,
+) -> ModuleType:
+    """Build a fake ``ultralytics`` module with a stub ``YOLO`` constructor."""
+    ultra = ModuleType("ultralytics")
+    factory = yolo_factory or (lambda ref: SimpleNamespace(ref=ref))
+    ultra.YOLO = factory
+    return ultra
+
+
+def install_fake_ultralytics(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    yolo_factory: Callable[[str], Any] | None = None,
+) -> ModuleType:
+    """Register a fake ``ultralytics`` module for lazy-import factory tests."""
+    ultra = make_fake_ultralytics_module(yolo_factory=yolo_factory)
+    monkeypatch.setitem(sys.modules, "ultralytics", ultra)
+    return ultra
+
+
+def block_ultralytics_import(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``from ultralytics import YOLO`` raise ``ImportError``."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "ultralytics":
+            raise ImportError("no ultralytics")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)

@@ -14,6 +14,7 @@ import pytest
 from ml_pipeline.cli_predict import main as cli_main
 from ml_pipeline.predict import (
     PredictConfig,
+    _default_predict_model_factory,
     build_predict_kwargs,
     list_source_images,
     run_predict,
@@ -21,6 +22,7 @@ from ml_pipeline.predict import (
     validate_predict_inputs,
     write_polygons_for_result,
 )
+from fakes import block_ultralytics_import, install_fake_ultralytics
 
 
 class _StubArray:
@@ -115,6 +117,31 @@ def _make_config(tmp_path: Path) -> PredictConfig:
         project=tmp_path / "runs",
         name="yolo26n_seg_predict",
     )
+
+
+def test_default_predict_model_factory_loads_fake_yolo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refs: list[str] = []
+    install_fake_ultralytics(
+        monkeypatch,
+        yolo_factory=lambda ref: refs.append(ref) or _StubModel(ref),
+    )
+
+    model = _default_predict_model_factory("weights/best.pt")
+
+    assert refs == ["weights/best.pt"]
+    assert isinstance(model, _StubModel)
+    assert model.ref == "weights/best.pt"
+
+
+def test_default_predict_model_factory_surfaces_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block_ultralytics_import(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="uv sync --extra train"):
+        _default_predict_model_factory("best.pt")
 
 
 def test_list_source_images_directory(tmp_path: Path) -> None:

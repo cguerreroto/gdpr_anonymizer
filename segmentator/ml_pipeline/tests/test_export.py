@@ -15,10 +15,12 @@ import pytest
 from ml_pipeline.cli_export import main as cli_main
 from ml_pipeline.export import (
     ExportConfig,
+    _default_export_model_factory,
     build_export_kwargs,
     run_export,
     validate_export_inputs,
 )
+from fakes import block_ultralytics_import, install_fake_ultralytics
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +54,31 @@ def _make_config(tmp_path: Path) -> ExportConfig:
     weights = tmp_path / "best.pt"
     weights.write_bytes(b"")
     return ExportConfig(weights=weights)
+
+
+def test_default_export_model_factory_loads_fake_yolo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refs: list[str] = []
+    install_fake_ultralytics(
+        monkeypatch,
+        yolo_factory=lambda ref: refs.append(ref) or _StubModel(ref),
+    )
+
+    model = _default_export_model_factory("weights/best.pt")
+
+    assert refs == ["weights/best.pt"]
+    assert isinstance(model, _StubModel)
+    assert model.ref == "weights/best.pt"
+
+
+def test_default_export_model_factory_surfaces_install_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block_ultralytics_import(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="uv sync --extra train"):
+        _default_export_model_factory("best.pt")
 
 
 def test_build_export_kwargs_defaults(tmp_path: Path) -> None:
