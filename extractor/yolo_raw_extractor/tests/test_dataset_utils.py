@@ -63,6 +63,33 @@ def test_derive_label_dir_fallback(tmp_path: Path) -> None:
     assert derive_label_dir(p) == p
 
 
+def test_derive_label_dir_fallback(tmp_path: Path) -> None:
+    p = tmp_path / "somewhere" / "images" / "train"
+    p.mkdir(parents=True)
+    assert derive_label_dir(p) == p
+
+
+def test_derive_label_dir_without_images_segment_returns_input(tmp_path: Path) -> None:
+    p = tmp_path / "custom" / "train"
+    p.mkdir(parents=True)
+    assert derive_label_dir(p) == p
+
+
+def test_parse_label_line_requires_three_polygon_points(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def tiny_bbox(*_args: float) -> np.ndarray:
+        return np.array([[0.0, 0.0], [0.1, 0.1]], dtype=np.float32)
+
+    monkeypatch.setattr(
+        "yolo_raw_extractor.dataset_utils.bbox_to_polygon_normalized",
+        tiny_bbox,
+    )
+
+    with pytest.raises(ValueError, match="at least 3 points"):
+        parse_label_line("0 0.5 0.5 0.2 0.4", width=10, height=10)
+
+
 def test_find_image_path(tmp_path: Path) -> None:
     img_dir = tmp_path / "images"
     img_dir.mkdir()

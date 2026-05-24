@@ -137,6 +137,70 @@ def test_extract_segments_no_labels_logs(
     assert any("No labels found" in rec.message for rec in caplog.records)
 
 
+def test_extract_segments_missing_labels_dir_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    root = tmp_path / "ds"
+    img_dir = root / "images" / "train"
+    img_dir.mkdir(parents=True)
+    (img_dir / "shot.png").write_bytes(b"")
+    cfg = {"path": ".", "train": "images/train", "names": {0: "person"}}
+    (root / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    missing_labels = root / "labels" / "train"
+    monkeypatch.setattr(
+        segments_mod,
+        "derive_label_dir",
+        lambda _image_dir: missing_labels,
+    )
+
+    with caplog.at_level("WARNING"):
+        assert extract_segments(root) == 0
+
+    assert any("Label directory missing" in rec.message for rec in caplog.records)
+
+
+def test_extract_segments_skips_label_without_matching_image(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    root = tmp_path / "ds"
+    img_dir = root / "images" / "train"
+    lbl_dir = root / "labels" / "train"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+    (lbl_dir / "orphan.txt").write_text(
+        "0 0.0 0.0 1.0 0.0 1.0 1.0 0.0 1.0\n", encoding="utf-8"
+    )
+    cfg = {"path": ".", "train": "images/train", "names": {0: "person"}}
+    (root / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        assert extract_segments(root) == 0
+
+    assert any("missing matching image" in rec.message for rec in caplog.records)
+
+
+def test_extract_segments_skips_blank_label_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "ds"
+    img_dir = root / "images" / "train"
+    lbl_dir = root / "labels" / "train"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+    (img_dir / "shot.png").write_bytes(b"")
+    (lbl_dir / "shot.txt").write_text("\n\n  \n", encoding="utf-8")
+    cfg = {"path": ".", "train": "images/train", "names": {0: "person"}}
+    (root / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    monkeypatch.setattr(
+        segments_mod.cv2, "imread", lambda _path, _flags: np.zeros((5, 5, 3), np.uint8)
+    )
+    monkeypatch.setattr(segments_mod.cv2, "imwrite", lambda _path, _seg: True)
+
+    assert extract_segments(root) == 0
+
+
 def test_extract_segments_missing_image_dir_logs(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:

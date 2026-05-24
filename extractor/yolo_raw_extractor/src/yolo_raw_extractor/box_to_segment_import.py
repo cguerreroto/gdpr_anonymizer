@@ -144,7 +144,11 @@ def _split_image_label_dirs(split_root: Path) -> tuple[Path, Path] | None:
     if nested_images.is_dir() and nested_labels.is_dir():
         return nested_images, nested_labels
 
-    if any(split_root.glob(f"*{ext}") for ext in IMAGE_EXTENSIONS):
+    if any(
+        match
+        for ext in IMAGE_EXTENSIONS
+        for match in split_root.glob(f"*{ext}")
+    ):
         return split_root, split_root
 
     return None

@@ -145,6 +145,11 @@ def test_import_stats_post_init_default() -> None:
     assert stats.splits == {}
 
 
+def test_import_stats_preserves_provided_splits() -> None:
+    stats = ImportStats(splits={"train": 3})
+    assert stats.splits == {"train": 3}
+
+
 def test_load_bbox_src_config_returns_empty_when_missing(tmp_path: Path) -> None:
     assert bbox_mod._load_bbox_src_config(tmp_path) == {}
 
@@ -164,6 +169,13 @@ def test_resolve_bbox_src_path_with_parent_alias(tmp_path: Path) -> None:
     assert resolved == target.resolve()
 
 
+def test_split_image_label_dirs_returns_none_for_empty_dir(tmp_path: Path) -> None:
+    empty = tmp_path / "train"
+    empty.mkdir()
+    (empty / "readme.txt").write_text("no images here", encoding="utf-8")
+    assert bbox_mod._split_image_label_dirs(empty) is None
+
+
 def test_split_image_label_dirs_returns_none_for_known_subfolder() -> None:
     assert bbox_mod._split_image_label_dirs(Path("/tmp/images")) is None
 
@@ -174,6 +186,57 @@ def test_split_image_label_dirs_flat_layout(tmp_path: Path) -> None:
     (flat / "img.jpg").write_bytes(b"")
     pair = bbox_mod._split_image_label_dirs(flat)
     assert pair == (flat, flat)
+
+
+def test_discover_bbox_splits_raises_when_configured_path_missing(tmp_path: Path) -> None:
+    missing = tmp_path / "absolutely" / "missing" / "images"
+    (tmp_path / "data.yaml").write_text(
+        yaml.safe_dump({"train": str(missing), "names": {0: "face"}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileNotFoundError, match="Configured split path does not exist"):
+        discover_bbox_splits(tmp_path)
+
+
+def test_discover_bbox_splits_val_fallback_to_valid_folder(tmp_path: Path) -> None:
+    missing = tmp_path / "absolutely" / "missing" / "val" / "images"
+    (tmp_path / "data.yaml").write_text(
+        yaml.safe_dump({"val": str(missing), "names": {0: "face"}}),
+        encoding="utf-8",
+    )
+    img_dir = tmp_path / "valid" / "images"
+    lbl_dir = tmp_path / "valid" / "labels"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+
+    splits = discover_bbox_splits(tmp_path)
+
+    assert splits["val"] == (img_dir.resolve(), lbl_dir.resolve())
+
+
+def test_discover_bbox_splits_skips_files_and_unknown_dirs(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("ignore", encoding="utf-8")
+    misc = tmp_path / "misc"
+    misc.mkdir()
+    train_img = tmp_path / "train" / "images"
+    train_lbl = tmp_path / "train" / "labels"
+    train_img.mkdir(parents=True)
+    train_lbl.mkdir(parents=True)
+
+    splits = discover_bbox_splits(tmp_path)
+
+    assert set(splits) == {"train"}
+
+
+def test_guess_label_dir_uses_parallel_labels_tree(tmp_path: Path) -> None:
+    root = tmp_path / "export"
+    images = root / "images" / "val"
+    labels = root / "labels" / "val"
+    images.mkdir(parents=True)
+    labels.mkdir(parents=True)
+
+    assert bbox_mod._guess_label_dir(images) == labels
 
 
 def test_discover_bbox_splits_uses_dir_walk_when_yaml_missing(tmp_path: Path) -> None:
