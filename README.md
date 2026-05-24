@@ -80,10 +80,12 @@ Dataset roots and run directories are supplied as explicit paths on the command 
 From the repository root:
 
 ```bash
-make test
+make test    # all unit tests (Rust + both Python packages)
+make lint    # segmentator: cargo clippy
+make fmt     # segmentator: cargo fmt
 ```
 
-Continuous integration runs on push and pull requests to `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Per-package test commands: [CONTRIBUTING.md](CONTRIBUTING.md).
+Other targets (`test-rust`, `test-extractor`, `test-ml-pipeline`): see [CONTRIBUTING.md](CONTRIBUTING.md). Continuous integration runs on push and pull requests to `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ## Limitations
 

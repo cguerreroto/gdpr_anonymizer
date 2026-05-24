@@ -45,17 +45,22 @@ From `segmentator`:
 cargo build --release
 ```
 
-### Run tests
+### Makefile targets
 
-From the repository root:
+From the repository root, [`Makefile`](Makefile) provides:
 
-```bash
-make test
-```
+| Target | Action |
+| --- | --- |
+| `make test` | `cargo test` in `segmentator`, then `pytest` in both Python packages |
+| `make test-rust` | `cargo test` in `segmentator` only |
+| `make test-extractor` | `pytest` in `extractor/yolo_raw_extractor` |
+| `make test-ml-pipeline` | `pytest` in `segmentator/ml_pipeline` |
+| `make fmt` | `cargo fmt` in `segmentator` |
+| `make lint` | `cargo clippy -- -D warnings` in `segmentator` |
 
-This runs `cargo test` in `segmentator`, then `pytest` in both Python packages.
+`make coverage` is added in repository step 10 (pytest-cov in both Python packages).
 
-To run tests in a single package:
+To run tests in a single package without Make:
 
 ```bash
 cd extractor/yolo_raw_extractor && uv run --group dev pytest
