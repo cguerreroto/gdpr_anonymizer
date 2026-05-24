@@ -1,0 +1,55 @@
+name: Bug report
+description: Report incorrect behavior or a regression
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. Search [existing issues](https://github.com/cguerreroto/gdpr_anonymizer/issues) first.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+      placeholder: Clear steps help us reproduce the issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Commands, inputs, or sequence that triggers the issue.
+      placeholder: |
+        1. cd segmentator/ml_pipeline
+        2. uv run gdpr-yolo-normalize-labels ...
+    validations:
+      required: true
+
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the repository is affected?
+      placeholder: e.g. ml_pipeline, yolo_raw_extractor, segmentator
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Rust version, or GPU setup if relevant.
+      placeholder: e.g. macOS 15, Python 3.13, Rust 1.88
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant terminal output. Do not include private data or credentials.
+    validations:
+      required: false

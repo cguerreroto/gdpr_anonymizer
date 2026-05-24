@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/cguerreroto/gdpr_anonymizer/blob/main/CONTRIBUTING.md
+    about: Setup, tests, pull requests, and code style

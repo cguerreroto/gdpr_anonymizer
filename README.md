@@ -8,6 +8,8 @@ The following sections summarize the components and a conventional processing or
 
 This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify, and redistribute the software for noncommercial purposes when you include the license and the author notices described there and in [AUTHORS.md](AUTHORS.md). Commercial use is not permitted under this license.
 
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests, and pull request guidelines.
+
 ## Pipeline at a glance
 
 | Order | Stage | Tool | Location |
