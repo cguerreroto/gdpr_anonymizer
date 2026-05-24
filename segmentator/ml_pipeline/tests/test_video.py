@@ -17,6 +17,7 @@ from ml_pipeline.video import (
     FrameStats,
     VideoBlurConfig,
     _apply_blur,
+    _default_video_pipeline_runner,
     _union_mask,
     aggregate_video_metrics,
     blurred_video_filename,
@@ -28,7 +29,9 @@ from ml_pipeline.video import (
 )
 from fakes import (
     FakeArray,
+    FakeCapture,
     FakeTensor,
+    FakeWriter,
     fake_segmentation_result,
     install_fake_cv2_numpy,
     make_fake_cv2_module,
@@ -47,6 +50,81 @@ def _make_config(tmp_path: Path) -> VideoBlurConfig:
     source.write_bytes(b"")
     output = tmp_path / "blurred.mp4"
     return VideoBlurConfig(weights=weights, source=source, output=output)
+
+
+class _PredictStubModel:
+    """Model stub returning a preset sequence of predict results."""
+
+    def __init__(self, responses: list[Any]) -> None:
+        self._responses = list(responses)
+        self._call = 0
+
+    def predict(self, _frame: Any, **_kwargs: Any) -> Any:
+        if self._call >= len(self._responses):
+            return []
+        response = self._responses[self._call]
+        self._call += 1
+        return response
+
+
+class _NonSubscriptableResults:
+    """Iterable predict output that rejects ``results[0]``."""
+
+    def __init__(self, items: list[Any]) -> None:
+        self._items = items
+
+    def __bool__(self) -> bool:
+        return bool(self._items)
+
+    def __getitem__(self, _idx: int) -> Any:
+        raise TypeError("not subscriptable")
+
+    def __iter__(self):
+        return iter(self._items)
+
+
+def _install_pipeline_cv2(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    capture: FakeCapture | None = None,
+    writer: FakeWriter | None = None,
+    capture_factory: Any = None,
+    writer_factory: Any = None,
+) -> tuple[FakeCapture | None, FakeWriter | None]:
+    """Install fake cv2 with optional fixed capture/writer instances."""
+    holder: dict[str, FakeCapture | FakeWriter | None] = {
+        "capture": capture,
+        "writer": writer,
+    }
+
+    def _capture_factory(path: str) -> FakeCapture:
+        if capture_factory is not None:
+            cap = capture_factory(path)
+        elif holder["capture"] is not None:
+            cap = holder["capture"]
+        else:
+            cap = FakeCapture(path)
+        holder["capture"] = cap
+        return cap
+
+    def _writer_factory(
+        path: str, fourcc: int, fps: float, size: tuple[int, int]
+    ) -> FakeWriter:
+        if writer_factory is not None:
+            wr = writer_factory(path, fourcc, fps, size)
+        elif holder["writer"] is not None:
+            wr = holder["writer"]
+        else:
+            wr = FakeWriter(path, fourcc, fps, size)
+        holder["writer"] = wr
+        return wr
+
+    cv2_mod = make_fake_cv2_module(
+        capture_factory=_capture_factory,
+        writer_factory=_writer_factory,
+    )
+    install_fake_cv2_numpy(monkeypatch, cv2_module=cv2_mod)
+    return holder["capture"], holder["writer"]
 
 
 def test_frame_progress_renders_percent_bar() -> None:
@@ -303,6 +381,160 @@ def test_union_mask_skips_out_of_range_indices(
     union = _union_mask(result, [5], height=2, width=2, dilate_px=0)
 
     assert union.sum() == 0
+
+
+def test_default_video_pipeline_runner_processes_frames_with_detection_on_second(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _make_config(tmp_path)
+    config.show_progress = False
+    height, width = 48, 64
+    frames = [
+        FakeArray.zeros((height, width, 3)),
+        FakeArray.zeros((height, width, 3)),
+    ]
+    capture = FakeCapture(
+        str(config.source),
+        frames=frames,
+        width=width,
+        height=height,
+        fps=10.0,
+    )
+    holder: dict[str, FakeWriter | None] = {"writer": None}
+    _install_pipeline_cv2(
+        monkeypatch,
+        capture=capture,
+        writer_factory=lambda path, fourcc, fps, size: holder.update(
+            writer=FakeWriter(path, fourcc, fps, size)
+        )
+        or holder["writer"],
+    )
+
+    detection = fake_segmentation_result(classes=[0], height=height, width=width)
+    model = _PredictStubModel([[], [detection]])
+    predict_kwargs = build_predict_kwargs(config)
+
+    stats = _default_video_pipeline_runner(model, config, predict_kwargs)
+
+    assert len(stats) == 2
+    assert stats[0].detections == 0
+    assert stats[0].mask_pixels == 0
+    assert stats[1].detections == 1
+    assert stats[1].detection_classes == [0]
+    assert stats[1].mask_pixels > 0
+    writer = holder["writer"]
+    assert writer is not None
+    assert len(writer.frames_written) == 2
+    assert capture._released
+    assert writer._released
+
+
+def test_default_video_pipeline_runner_falls_back_when_results_not_indexable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _make_config(tmp_path)
+    config.show_progress = False
+    height, width = 48, 64
+    capture = FakeCapture(
+        str(config.source),
+        frames=[FakeArray.zeros((height, width, 3))],
+        width=width,
+        height=height,
+    )
+    holder: dict[str, FakeWriter | None] = {"writer": None}
+    _install_pipeline_cv2(
+        monkeypatch,
+        capture=capture,
+        writer_factory=lambda path, fourcc, fps, size: holder.update(
+            writer=FakeWriter(path, fourcc, fps, size)
+        )
+        or holder["writer"],
+    )
+
+    detection = fake_segmentation_result(classes=[1], height=height, width=width)
+    model = _PredictStubModel([_NonSubscriptableResults([detection])])
+
+    stats = _default_video_pipeline_runner(
+        model, config, build_predict_kwargs(config)
+    )
+
+    assert len(stats) == 1
+    assert stats[0].detections == 1
+    assert stats[0].detection_classes == [1]
+    assert holder["writer"] is not None
+    assert len(holder["writer"].frames_written) == 1
+
+
+def test_default_video_pipeline_runner_raises_when_capture_not_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _make_config(tmp_path)
+    _install_pipeline_cv2(
+        monkeypatch,
+        capture_factory=lambda path: FakeCapture(path, opened=False),
+    )
+    model = _PredictStubModel([])
+
+    with pytest.raises(RuntimeError, match="Cannot open video for reading"):
+        _default_video_pipeline_runner(model, config, build_predict_kwargs(config))
+
+
+def test_default_video_pipeline_runner_raises_when_writer_not_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _make_config(tmp_path)
+    capture = FakeCapture(str(config.source), width=64, height=48)
+    _install_pipeline_cv2(
+        monkeypatch,
+        capture=capture,
+        writer_factory=lambda path, fourcc, fps, size: FakeWriter(
+            path, fourcc, fps, size, opened=False
+        ),
+    )
+    model = _PredictStubModel([])
+
+    with pytest.raises(RuntimeError, match="Cannot open video for writing"):
+        _default_video_pipeline_runner(model, config, build_predict_kwargs(config))
+
+    assert capture._released
+
+
+def test_default_video_pipeline_runner_passthrough_when_class_filter_excludes_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _make_config(tmp_path)
+    config.show_progress = False
+    config.classes = [99]
+    height, width = 48, 64
+    frame = FakeArray.zeros((height, width, 3))
+    capture = FakeCapture(
+        str(config.source),
+        frames=[frame],
+        width=width,
+        height=height,
+    )
+    holder: dict[str, FakeWriter | None] = {"writer": None}
+    _install_pipeline_cv2(
+        monkeypatch,
+        capture=capture,
+        writer_factory=lambda path, fourcc, fps, size: holder.update(
+            writer=FakeWriter(path, fourcc, fps, size)
+        )
+        or holder["writer"],
+    )
+
+    detection = fake_segmentation_result(classes=[0], height=height, width=width)
+    model = _PredictStubModel([[detection]])
+
+    stats = _default_video_pipeline_runner(
+        model, config, build_predict_kwargs(config)
+    )
+
+    assert len(stats) == 1
+    assert stats[0].detections == 0
+    assert stats[0].detection_classes == []
+    assert holder["writer"] is not None
+    assert holder["writer"].frames_written == [frame]
 
 
 def test_log_video_status_respects_enabled_flag(
