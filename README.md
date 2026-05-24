@@ -1,14 +1,42 @@
 # gdpr_anonymizer
 
-The repository provides tooling for a video-oriented privacy workflow: frame sampling, instance segmentation labels (for example person or vehicle regions, depending on annotation scope), and deterministic dataset augmentation. The output is a YOLO-style layout suitable for external training or evaluation.
+Tools for a video privacy workflow: sample frames, annotate instance segmentation masks (for example people or vehicles), train a YOLO26 segmentation model, and blur sensitive regions before sharing footage. Outputs use a YOLO-style dataset layout for custom training and evaluation.
 
-The following sections summarize the components and a conventional processing order.
+The repository targets researchers and developers who need local, repeatable control over labeling, training, and anonymization. Datasets and model weights stay on your machine; you pass explicit paths to each command.
 
-## License
+## Repository layout
 
-This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify, and redistribute the software for noncommercial purposes when you include the license and the author notices described there and in [AUTHORS.md](AUTHORS.md). Commercial use is not permitted under this license.
+| Path | Role |
+| --- | --- |
+| [`extractor/yolo_raw_extractor`](extractor/yolo_raw_extractor) | Frame extraction, segment crops, dataset augmentation |
+| [`segmentator`](segmentator) | Desktop polygon editor (Rust / egui) |
+| [`segmentator/ml_pipeline`](segmentator/ml_pipeline) | Dataset audit, training, validation, video blur |
+| [`extractor/yolo-docs`](extractor/yolo-docs) | YOLO segmentation notes and label syntax |
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, tests, and pull request guidelines.
+## Prerequisites
+
+- [Rust](https://www.rust-lang.org/tools/install) matching `rust-version` in [`segmentator/Cargo.toml`](segmentator/Cargo.toml)
+- [uv](https://github.com/astral-sh/uv) and Python 3.13+ for the extractor
+- Python 3.11+ for `ml_pipeline`
+- Optional GPU (CUDA or Apple Silicon) for Ultralytics training and inference
+
+## Quick start
+
+```bash
+cd extractor/yolo_raw_extractor && uv sync
+uv run yolo-raw-extractor /path/to/video.mp4 /path/to/dataset
+```
+
+```bash
+cd segmentator && cargo run --release
+```
+
+```bash
+cd segmentator/ml_pipeline && uv sync
+uv run gdpr-yolo-normalize-labels /path/to/dataset
+```
+
+Full setup, per-package tests, and contribution workflow: [CONTRIBUTING.md](CONTRIBUTING.md). Command-line detail for every stage is in the reference sections below.
 
 ## Pipeline at a glance
 
@@ -45,6 +73,30 @@ Large or sensitive assets are not tracked in Git. Local directory layout is left
 
 Dataset roots and run directories are supplied as explicit paths on the command line when invoking the Python CLIs or when opening a dataset in the segmentator.
 
+## Development
+
+From the repository root:
+
+```bash
+make test
+```
+
+Per-package test commands: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Limitations
+
+- This tooling does not by itself guarantee legal GDPR compliance. You remain responsible for lawful processing and consent in your jurisdiction.
+- Model quality depends on your labels, class definitions, and training data; poor annotations produce unreliable masks for blur.
+- Training and video blur require optional Ultralytics dependencies and suitable hardware; CPU-only runs may be slow on long videos.
+- The segmentator defaults to class index `0` = Person and `1` = Car; other use cases require consistent `dataset.yaml` and label indices.
+
+## Command reference
+
+Expand a section for install notes, examples, and flags.
+
+<details>
+<summary>Extractor and augmentor (Python)</summary>
+
 ## Extractor and augmentor (Python)
 
 Installation, prerequisites, and full command examples are documented in [`extractor/yolo_raw_extractor/README.md`](extractor/yolo_raw_extractor/README.md).
@@ -57,6 +109,11 @@ Abbreviated sequence:
 4. Augment: `uv run yolo-augmentor <labeled-dataset> <output-dataset> --seed <n>`
 
 The augmentor writes images under `images/<split>/` and co-located label `.txt` files with matching stems.
+
+</details>
+
+<details>
+<summary>Dataset label layout (gdpr-yolo-normalize-labels)</summary>
 
 ## Dataset label layout (`ml_pipeline`)
 
@@ -90,6 +147,11 @@ Options include `--dry-run`, `--report-json <path>`, `--mode copy|move|symlink`,
 
 The `move` mode deletes co-located `.txt` files from `images/<split>/`, which breaks workflows that only resolve labels next to image files (including the segmentator). The default `symlink` mode keeps a single on-disk file while exposing `labels/<split>/` paths.
 
+</details>
+
+<details>
+<summary>Dataset YAML (gdpr-yolo-fix-dataset-yaml)</summary>
+
 ## Dataset YAML (`ml_pipeline`)
 
 The `gdpr-yolo-fix-dataset-yaml` command scans segmentation label files under the dataset root, compares class indices to `dataset.yaml`, and reports missing `nc` or `names` entries. With `--apply`, it writes an updated `dataset.yaml` (default class names follow the segmentator: 0 = Person, 1 = Car). Optional `--carve-val-fraction` copies or moves a deterministic share of labeled train items into `images/val` and `labels/val` for a held-out validation split.
@@ -102,6 +164,11 @@ uv run gdpr-yolo-fix-dataset-yaml <path-to-dataset-root> --apply
 ```
 
 Use `--strict` to exit with a non-zero status when issues remain. Use `--carve-val-fraction` with `--carve-seed` and optionally `--carve-move` when building a validation split from train.
+
+</details>
+
+<details>
+<summary>Training (gdpr-yolo-train)</summary>
 
 ## Training (`ml_pipeline`)
 
@@ -130,6 +197,11 @@ Useful options:
 After a successful run, the JSON report includes `save_dir` and `validate_weights` (path to `weights/best.pt` under `save_dir`). Use `validate_weights` for `gdpr-yolo-validate --weights`.
 
 Run outputs and downloaded weights are git-ignored (`runs/`, `*.pt`, `*.onnx`).
+
+</details>
+
+<details>
+<summary>Validation (gdpr-yolo-validate)</summary>
 
 ## Validation (`ml_pipeline`)
 
@@ -171,6 +243,11 @@ Useful options:
 
 The same `dataset.resolved.yaml` rewrite used at training time is performed before validation, so the command also works when launched from outside the dataset directory.
 
+</details>
+
+<details>
+<summary>Error analysis (gdpr-yolo-analyze-errors)</summary>
+
 ## Error analysis (`ml_pipeline`)
 
 After validation, `gdpr-yolo-analyze-errors` identifies images with the most false negatives (missed detections) and false positives (incorrect detections), helping you decide which images need more labels.
@@ -202,6 +279,11 @@ The JSON report includes:
 
 Use FN counts to prioritize which class needs more labeled examples. Use the worst images list to identify problematic frames for manual review or re-annotation.
 
+</details>
+
+<details>
+<summary>Predict on stills (gdpr-yolo-predict)</summary>
+
 ## Predict on stills (`ml_pipeline`)
 
 `gdpr-yolo-predict` runs a trained checkpoint on a folder of still images (or a single image) and writes Ultralytics overlay images for human review. It is a sanity check before moving to the video pipeline.
@@ -230,6 +312,11 @@ Useful options:
 - `--dry-run`: print resolved kwargs without invoking Ultralytics.
 
 The JSON report includes a `summary` block with `image_count`, `images_with_detections`, `total_detections`, and `detections_by_class`. Use this to spot frames where the model misses the target classes before video processing.
+
+</details>
+
+<details>
+<summary>Export (gdpr-yolo-export)</summary>
 
 ## Export (`ml_pipeline`)
 
@@ -265,6 +352,11 @@ uv sync --extra train --extra export
 ```
 
 Exported artifacts are git-ignored alongside `*.pt` and `runs/`.
+
+</details>
+
+<details>
+<summary>Video blur (gdpr-yolo-blur-video)</summary>
 
 ## Video blur (`ml_pipeline`)
 
@@ -304,6 +396,11 @@ While a video is being blurred, the CLI prints status to stderr (model load, sou
 The JSON report includes a `summary` block with `total_frames`, `frames_with_detections`, `frames_with_detections_pct`, `total_detections`, `detections_by_class`, and `average_mask_area_fraction`. These KPIs sit next to the validation mAP numbers and answer how often the model intervened on real footage and how much of each frame was masked.
 
 The output video is git-ignored alongside the rest of `runs/` and other large local artifacts. Refusing to overwrite the source is enforced.
+
+</details>
+
+<details>
+<summary>Dataset cleaning and quarantine (gdpr-yolo-clean)</summary>
 
 ### Manual dataset cleaning (researcher workflow)
 
@@ -354,6 +451,11 @@ Useful options:
 
 Always run with `--dry-run` first. Destructive actions require `--yes`.
 
+</details>
+
+<details>
+<summary>Iteration and warm-start (gdpr-yolo-iterate)</summary>
+
 ## Iteration and warm-start (`ml_pipeline`)
 
 `gdpr-yolo-iterate` packages the most common research loop into one command: warm-start a new YOLO26-seg training run from a previous run's `weights/best.pt`, optionally re-validate against the same split, and produce a JSON delta against a prior validation report. The command does not invent dataset paths or version names. It reads the previous run directory, derives the next run name from the existing one, and forwards through the same `gdpr-yolo-train` and `gdpr-yolo-validate` drivers.
@@ -397,6 +499,11 @@ The JSON report includes:
 
 For comparable iteration curves, freeze the validation split (`val` in `dataset.yaml`) between runs and use the same `--imgsz` so val metrics are directly comparable. If you change the split or augmentation, treat the next iteration as a new baseline.
 
+</details>
+
+<details>
+<summary>Segmentator desktop app (Rust)</summary>
+
 ## Segmentator (Rust)
 
 The segmentator is a desktop application for dataset creation, class management, and polygon editing. Annotations are serialized as YOLO segmentation `.txt` files beside the corresponding images.
@@ -408,6 +515,14 @@ From the `segmentator/` crate root:
 ```bash
 cargo run --release
 ```
+
+</details>
+
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify, and redistribute the software for noncommercial purposes when you include the license and the author notices described there and in [AUTHORS.md](AUTHORS.md). Commercial use is not permitted under this license.
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Reference docs in the repo
 
