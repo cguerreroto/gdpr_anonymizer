@@ -86,5 +86,9 @@ Use `--no-prefix` when `dataset_raw` contains only this import. The default
 `yolo-raw-extractor`. Use `--dry-run` to preview and `--map-all-classes` if class
 names are unexpected.
 
-Do not run `yolo-augmentor` on the bbox source directly — its labels are object
+Do not run `yolo-augmentor` on the bbox source directly. Its labels are object
 detection boxes (`class cx cy w h`), not segmentation polygons.
+
+### Testing
+
+Unit tests are located in [`tests/`](tests). Run them with `uv run --group dev pytest` from this directory, or `make test-extractor` from the repository root. For the full layout, coverage workflow, and contribution conventions, see [`tests/README.md`](../../tests/README.md) at the repository root.

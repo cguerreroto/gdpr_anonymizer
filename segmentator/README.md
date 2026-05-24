@@ -24,3 +24,7 @@ The `ml_pipeline` package provides `gdpr-yolo-normalize-labels` (label layout au
 - Rust edition 2021; dependencies include `eframe`, `egui`, `serde_yaml_ng`, `futures`, and `notify`.
 - Always run `cargo fmt` after making code changes and `cargo clippy -- -D warnings` to ensure lints stay clean.
 - Files of interest: `src/main.rs` (UI + event handling) and `src/dataset.rs` (dataset model, IO, watcher).
+
+## Testing
+
+Rust tests live in `cfg(test)` modules (Rust’s `#[cfg(test)]` attribute), mainly in [`src/dataset.rs`](src/dataset.rs), and run with `cargo test`. Python tests for `ml_pipeline` are in [`ml_pipeline/tests`](ml_pipeline/tests). For the full layout, coverage workflow, and contribution conventions, see [`tests/README.md`](../tests/README.md) at the repository root.

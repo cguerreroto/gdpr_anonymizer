@@ -74,8 +74,11 @@ From the repository root, [`Makefile`](Makefile) provides:
 | `make test-ml-pipeline` | `pytest` in `segmentator/ml_pipeline` |
 | `make fmt` | `cargo fmt` in `segmentator` |
 | `make lint` | `cargo clippy -- -D warnings` in `segmentator` |
+| `make coverage` | `pytest --cov` in both Python packages (terminal, HTML, and XML reports) |
+| `make coverage-extractor` | Coverage for `extractor/yolo_raw_extractor` only |
+| `make coverage-ml-pipeline` | Coverage for `segmentator/ml_pipeline` only |
 
-`make coverage` is added in repository step 10 (pytest-cov in both Python packages).
+Test layout, coverage workflow, and conventions for new tests: [tests/README.md](tests/README.md).
 
 ### Profiling
 
