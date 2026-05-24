@@ -118,17 +118,54 @@ Use the GitHub Issue templates under [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_T
 
 Search existing Issues before opening a duplicate.
 
-## Maintainer checklist (repository settings)
+## Repository settings on GitHub
 
-Repository owners should confirm the following on GitHub (no file changes required):
+These items are configured on [github.com](https://github.com/cguerreroto/gdpr_anonymizer), not in Git. Repository owners should complete them once. Contributors can skim this section to understand project expectations.
 
-| Setting | Recommendation |
+### About box
+
+Open the repository home page, then click the gear icon next to About.
+
+| Field | What to set |
 | --- | --- |
-| Visibility | Public |
-| Issues | Enabled |
-| Description | Tools for video privacy: YOLO segmentation dataset pipeline and anonymization CLIs. |
-| Branch protection | Require pull request before merging to `main`; require status checks when CI is configured |
-| Review access | Grant collaborators and reviewers access as needed |
+| Description | `Tools for video privacy: YOLO segmentation dataset pipeline and anonymization CLIs.` |
+| Website | Leave empty unless you later publish a homepage or GitHub Pages site. The repository URL is enough for most visitors. |
+| Topics | Add: `yolo`, `segmentation`, `privacy`, `video`, `rust`, `python` |
+| Release | Optional. Not required for development use. |
+
+### Visibility and Issues
+
+Under Settings → General:
+
+- This project is intended to stay public so others can read and contribute. Owners who need a private fork for a specific reason can adjust visibility under the same settings page.
+- Under Features, enable Issues so bug reports and feature requests use the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/).
+
+### Issue labels
+
+The issue templates reference these labels. Create them under Settings → Labels if they do not exist yet:
+
+| Label | Suggested color | Used by |
+| --- | --- | --- |
+| `bug` | Red | Bug report template |
+| `enhancement` | Blue | Feature request template |
+
+### Branch protection
+
+Under Settings → Branches → Branch protection rules, add a rule for `main`:
+
+1. Enable Require a pull request before merging. If you work with others, require at least one approval.
+2. After continuous integration is configured (see repository workflows), enable Require status checks to pass before merging. Select the CI jobs that must succeed.
+3. Avoid force pushes to `main` unless you understand the impact on collaborators.
+
+Reserve direct commits to `main` for urgent documentation typos from maintainers. Feature work should use branches and pull requests as described above.
+
+### Collaborator access
+
+Under Settings → Collaborators, invite anyone who must review pull requests or evaluate the repository. Ensure they can open the repository. For a private fork, confirm their GitHub account has been granted access.
+
+### Optional: Discussions and Projects
+
+Discussions and Projects are not required. Enable them only if you want forum-style threads or a kanban board beyond Issues and pull requests.
 
 ## Code of conduct
 
