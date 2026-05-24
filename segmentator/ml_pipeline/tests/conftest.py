@@ -36,3 +36,11 @@ def sample_dataset(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return tmp_path
+
+
+@pytest.fixture
+def fake_cv2_numpy(monkeypatch: pytest.MonkeyPatch):
+    """Install fake cv2 and numpy modules (see tests/fakes.py)."""
+    from fakes import install_fake_cv2_numpy
+
+    return install_fake_cv2_numpy(monkeypatch)
