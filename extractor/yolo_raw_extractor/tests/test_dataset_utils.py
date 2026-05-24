@@ -33,10 +33,19 @@ def test_parse_label_line_valid() -> None:
     np.testing.assert_allclose(poly[2], [50.0, 200.0])
 
 
+def test_parse_label_line_bbox() -> None:
+    line = "0 0.5 0.5 0.2 0.4"
+    class_id, poly = parse_label_line(line, width=100, height=100)
+    assert class_id == 0
+    assert poly.shape == (4, 2)
+    np.testing.assert_allclose(poly[0], [40.0, 30.0])
+    np.testing.assert_allclose(poly[2], [60.0, 70.0])
+
+
 def test_parse_label_line_errors() -> None:
-    with pytest.raises(ValueError, match="at least three points"):
+    with pytest.raises(ValueError, match="bbox or polygon"):
         parse_label_line("0 0.1 0.2", width=10, height=10)
-    with pytest.raises(ValueError, match="x/y pairs"):
+    with pytest.raises(ValueError, match="bbox \\(cx,cy,w,h\\) or polygon"):
         parse_label_line("0 0.1 0.2 0.3 0.4 0.5 0.6 0.7", width=10, height=10)
 
 
