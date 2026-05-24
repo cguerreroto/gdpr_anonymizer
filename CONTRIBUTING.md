@@ -17,6 +17,21 @@ Thank you for your interest in this project. Contributions are welcome under the
 - Python 3.13+ for [`extractor/yolo_raw_extractor`](extractor/yolo_raw_extractor)
 - Python 3.11+ for [`segmentator/ml_pipeline`](segmentator/ml_pipeline)
 
+### Python packages and uv
+
+This repository has two separate Python packages. There is no root `pyproject.toml`. Each package has its own `pyproject.toml`, `uv.lock`, and virtual environment when you run `uv sync` inside that directory.
+
+| Package | Directory | Python (`requires-python`) | Default install | Optional install |
+| --- | --- | --- | --- | --- |
+| `yolo-raw-extractor` | `extractor/yolo_raw_extractor` | 3.13+ | `uv sync` | `uv sync --group dev` for `pytest` and `py-spy` |
+| `ml-pipeline` | `segmentator/ml_pipeline` | 3.11+ | `uv sync` | `uv sync --extra train` for Ultralytics CLIs (`gdpr-yolo-train`, validate, predict, blur, and similar). `uv sync --extra export` for ONNX export. `uv sync --group dev` for `pytest` and `py-spy` |
+
+Run commands with `uv run …` from the package directory shown in the table. CI and `make test` use the same layout.
+
+Lockfiles: `uv.lock` in each Python package is committed. After you change dependencies in `pyproject.toml`, run `uv lock` or `uv sync` in that directory and commit the updated lockfile with the dependency change.
+
+`ml_pipeline` extras: a plain `uv sync` installs layout and YAML tools only. Training, validation, export, and video blur need `--extra train`. If you run `uv sync` again without `--extra train`, Ultralytics is removed from that environment. See the README training section for the exact error message and recovery command.
+
 ### Install dependencies
 
 #### Extractor
@@ -27,6 +42,8 @@ From `extractor/yolo_raw_extractor`:
 uv sync
 ```
 
+For tests or profiling, add `--group dev`.
+
 #### ML pipeline
 
 From `segmentator/ml_pipeline`:
@@ -35,7 +52,7 @@ From `segmentator/ml_pipeline`:
 uv sync
 ```
 
-For training, validation, or export commands that call Ultralytics, also install the optional extras documented in the README (`uv sync --extra train` and, when exporting ONNX, `uv sync --extra export`).
+Add `--extra train` before any command that imports Ultralytics. Add `--extra export` when exporting ONNX (often together with train: `uv sync --extra train --extra export`). Add `--group dev` for `pytest` or `py-spy`.
 
 #### Segmentator
 

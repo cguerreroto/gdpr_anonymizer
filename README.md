@@ -22,6 +22,8 @@ The repository targets researchers and developers who need local, repeatable con
 - Python 3.11+ for `ml_pipeline`
 - Optional GPU (CUDA or Apple Silicon) for Ultralytics training and inference
 
+Python dependencies are managed per package (two `uv` projects, two lockfiles). Versions, `uv sync` vs optional extras, and lockfile policy: [Python packages and uv in CONTRIBUTING.md](CONTRIBUTING.md#python-packages-and-uv).
+
 ## Quick start
 
 ```bash
