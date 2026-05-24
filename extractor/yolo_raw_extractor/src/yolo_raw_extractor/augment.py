@@ -508,6 +508,10 @@ def augment_dataset(dataset_dir: Path, output_dir: Path, seed: int) -> None:
             continue
 
         for label_path in label_files:
+            if not label_path.read_text(encoding="utf-8").strip():
+                LOGGER.debug("Skipping empty label file %s", label_path)
+                continue
+
             image_path = find_image_path(label_path, image_dir)
             if image_path is None:
                 LOGGER.warning("Skipping %s (missing image match).", label_path)

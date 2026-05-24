@@ -62,26 +62,51 @@ def find_image_path(label_path: Path, image_dir: Path) -> Path | None:
     return None
 
 
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def bbox_to_polygon_normalized(cx: float, cy: float, w: float, h: float) -> np.ndarray:
+    """Convert a normalized YOLO bbox into a four-point polygon (N x 2)."""
+    half_w = w / 2.0
+    half_h = h / 2.0
+    corners = (
+        (cx - half_w, cy - half_h),
+        (cx + half_w, cy - half_h),
+        (cx + half_w, cy + half_h),
+        (cx - half_w, cy + half_h),
+    )
+    return np.asarray(
+        [(_clamp01(x), _clamp01(y)) for x, y in corners],
+        dtype=np.float32,
+    )
+
+
 def parse_label_line(line: str, width: int, height: int) -> tuple[int, np.ndarray]:
-    """Parse a YOLO segmentation line into absolute polygon coordinates."""
+    """Parse a YOLO segmentation or detection line into absolute polygon coordinates."""
     tokens = line.strip().split()
-    if len(tokens) < 7:
-        msg = "Segmentation entry requires class id and at least three points"
+    if len(tokens) < 5:
+        msg = "Label entry requires class id and bbox or polygon coordinates"
         raise ValueError(msg)
 
     class_id = int(float(tokens[0]))
     coords = np.asarray([float(value) for value in tokens[1:]], dtype=np.float32)
-    if coords.size % 2 != 0:
-        msg = "Segmentation coordinates must be in x/y pairs"
+
+    if coords.size == 4:
+        normalized = bbox_to_polygon_normalized(*coords)
+    elif coords.size >= 6 and coords.size % 2 == 0:
+        normalized = coords.reshape(-1, 2)
+    else:
+        msg = "Label coordinates must be bbox (cx,cy,w,h) or polygon x/y pairs"
         raise ValueError(msg)
 
-    xs = coords[0::2] * width
-    ys = coords[1::2] * height
-    polygon = np.stack((xs, ys), axis=1)
-    if polygon.shape[0] < 3:
+    if normalized.shape[0] < 3:
         msg = "Segmentation polygons require at least 3 points"
         raise ValueError(msg)
 
+    polygon = normalized.copy()
+    polygon[:, 0] *= width
+    polygon[:, 1] *= height
     return class_id, polygon
 
 
@@ -93,6 +118,7 @@ def sanitize_class_name(name: str) -> str:
 
 __all__ = [
     "IMAGE_EXTENSIONS",
+    "bbox_to_polygon_normalized",
     "derive_label_dir",
     "find_image_path",
     "load_dataset_config",
