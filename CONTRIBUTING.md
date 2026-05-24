@@ -60,6 +60,18 @@ From the repository root, [`Makefile`](Makefile) provides:
 
 `make coverage` is added in repository step 10 (pytest-cov in both Python packages).
 
+### Profiling
+
+Commands, scenarios, and bottleneck notes: [PERFORMANCE.md](PERFORMANCE.md).
+
+| Tool | Install | Run from |
+| --- | --- | --- |
+| `cProfile` | Built into Python | Either Python package (`uv run python -m cProfile …`) |
+| `py-spy` | `uv sync --group dev` in that package | Same package (`uv run py-spy …`) |
+| `cargo flamegraph` (optional) | `cargo install flamegraph` once per machine. Not a `Cargo.toml` dependency. | `segmentator/` |
+
+On macOS, `cargo flamegraph` needs full Xcode (not Command Line Tools only). See PERFORMANCE.md.
+
 To run tests in a single package without Make:
 
 ```bash

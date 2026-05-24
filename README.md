@@ -85,7 +85,7 @@ make lint    # segmentator: cargo clippy
 make fmt     # segmentator: cargo fmt
 ```
 
-Other targets (`test-rust`, `test-extractor`, `test-ml-pipeline`): see [CONTRIBUTING.md](CONTRIBUTING.md). Continuous integration runs on push and pull requests to `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+Other targets (`test-rust`, `test-extractor`, `test-ml-pipeline`): see [CONTRIBUTING.md](CONTRIBUTING.md). Continuous integration runs on push and pull requests to `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Profiling notes: [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Limitations
 
