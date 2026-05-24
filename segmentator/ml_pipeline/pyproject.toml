@@ -40,7 +40,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "py-spy>=0.4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

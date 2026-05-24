@@ -21,7 +21,7 @@ yolo-augmentor = "yolo_raw_extractor.augment:main"
 yolo-bbox-import = "yolo_raw_extractor.box_to_segment_import:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "py-spy>=0.4"]
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
