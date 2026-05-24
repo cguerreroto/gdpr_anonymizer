@@ -21,8 +21,24 @@ yolo-augmentor = "yolo_raw_extractor.augment:main"
 yolo-bbox-import = "yolo_raw_extractor.box_to_segment_import:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "py-spy>=0.4"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "py-spy>=0.4"]
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["yolo_raw_extractor"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
