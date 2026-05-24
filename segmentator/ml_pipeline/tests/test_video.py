@@ -16,6 +16,8 @@ from ml_pipeline.video import (
     FrameProgress,
     FrameStats,
     VideoBlurConfig,
+    _apply_blur,
+    _union_mask,
     aggregate_video_metrics,
     blurred_video_filename,
     build_predict_kwargs,
@@ -23,6 +25,13 @@ from ml_pipeline.video import (
     resolve_blurred_output_path,
     run_video_blur,
     validate_video_inputs,
+)
+from fakes import (
+    FakeArray,
+    FakeTensor,
+    fake_segmentation_result,
+    install_fake_cv2_numpy,
+    make_fake_cv2_module,
 )
 
 
@@ -121,6 +130,179 @@ def test_result_classes_falls_back_to_iter() -> None:
         boxes = _Boxes()
 
     assert _result_classes(_Result()) == [0, 2, 1]
+
+
+def test_apply_blur_gaussian_uses_odd_kernel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kernels: list[tuple[int, int]] = []
+
+    def gaussian_blur(frame: FakeArray, kernel: tuple[int, int], _sigma: float) -> FakeArray:
+        kernels.append(kernel)
+        return frame
+
+    cv2_mod = make_fake_cv2_module()
+    cv2_mod.GaussianBlur = gaussian_blur
+    install_fake_cv2_numpy(monkeypatch, cv2_module=cv2_mod)
+
+    config = _make_config(tmp_path)
+    config.blur_method = "gaussian"
+    config.blur_kernel = 50
+    frame = FakeArray.zeros((8, 8, 3))
+
+    result = _apply_blur(frame, config)
+
+    assert result is frame
+    assert kernels == [(51, 51)]
+
+
+def test_apply_blur_pixelate_returns_resized_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sizes: list[tuple[int, int]] = []
+
+    def resize(
+        _image: FakeArray,
+        size: tuple[int, int],
+        *,
+        interpolation: int = 0,
+    ) -> FakeArray:
+        sizes.append(size)
+        width, height = size
+        return FakeArray.zeros((height, width, 3))
+
+    cv2_mod = make_fake_cv2_module()
+    cv2_mod.resize = resize
+    install_fake_cv2_numpy(monkeypatch, cv2_module=cv2_mod)
+
+    config = _make_config(tmp_path)
+    config.blur_method = "pixelate"
+    config.pixelate_block = 4
+    frame = FakeArray.zeros((8, 8, 3))
+
+    blurred = _apply_blur(frame, config)
+
+    assert blurred.shape == (8, 8, 3)
+    assert sizes[0] == (2, 2)
+    assert sizes[1] == (8, 8)
+
+
+def test_apply_blur_invalid_method_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_cv2_numpy(monkeypatch)
+    config = _make_config(tmp_path)
+    config.blur_method = "watercolor"
+    frame = FakeArray.zeros((4, 4, 3))
+
+    with pytest.raises(ValueError, match="Unsupported blur method"):
+        _apply_blur(frame, config)
+
+
+def test_union_mask_returns_zeros_when_masks_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_cv2_numpy(monkeypatch)
+
+    class _NoMasks:
+        pass
+
+    union = _union_mask(_NoMasks(), [0], height=4, width=4, dilate_px=0)
+
+    assert isinstance(union, FakeArray)
+    assert union.shape == (4, 4)
+    assert union.sum() == 0
+
+
+def test_union_mask_returns_zeros_when_mask_data_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_cv2_numpy(monkeypatch)
+
+    class _EmptyMasks:
+        masks = type("M", (), {"data": None})()
+
+    union = _union_mask(_EmptyMasks(), [0], height=4, width=4, dilate_px=0)
+
+    assert union.sum() == 0
+
+
+def test_union_mask_resizes_mismatched_mask_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resize_calls: list[tuple[int, int]] = []
+
+    def resize(
+        _image: FakeArray,
+        size: tuple[int, int],
+        *,
+        interpolation: int = 0,
+    ) -> FakeArray:
+        resize_calls.append(size)
+        width, height = size
+        grid = [[1.0] * width for _ in range(height)]
+        return FakeArray.from_scalar_grid(grid, dtype="float32")
+
+    cv2_mod = make_fake_cv2_module()
+    cv2_mod.resize = resize
+    install_fake_cv2_numpy(monkeypatch, cv2_module=cv2_mod)
+
+    small = FakeArray.from_scalar_grid([[1.0, 0.0], [0.0, 0.0]], dtype="float32")
+    result = fake_segmentation_result(classes=[0], masks=[small], height=4, width=4)
+
+    union = _union_mask(result, [0], height=4, width=4, dilate_px=0)
+
+    assert resize_calls == [(4, 4)]
+    assert union.sum() > 0
+
+
+def test_union_mask_applies_dilation_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dilate_calls: list[tuple[int, int]] = []
+
+    def dilate(image: FakeArray, kernel: tuple[int, int]) -> FakeArray:
+        dilate_calls.append(kernel)
+        return image
+
+    cv2_mod = make_fake_cv2_module()
+    cv2_mod.dilate = dilate
+    install_fake_cv2_numpy(monkeypatch, cv2_module=cv2_mod)
+
+    mask = FakeArray.from_scalar_grid(
+        [[1.0, 0.0], [0.0, 0.0]],
+        dtype="float32",
+    )
+    result = fake_segmentation_result(classes=[0], masks=[mask], height=2, width=2)
+
+    _union_mask(result, [0], height=2, width=2, dilate_px=2)
+
+    assert dilate_calls == [(5, 5)]
+
+
+def test_union_mask_uses_cpu_and_numpy_on_tensor_masks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_cv2_numpy(monkeypatch)
+
+    grid = FakeArray.from_scalar_grid([[0.8, 0.0], [0.0, 0.0]], dtype="float32")
+    tensor = FakeTensor(grid)
+    result = fake_segmentation_result(classes=[0], masks=[tensor], height=2, width=2)
+
+    union = _union_mask(result, [0], height=2, width=2, dilate_px=0)
+
+    assert union.sum() > 0
+
+
+def test_union_mask_skips_out_of_range_indices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install_fake_cv2_numpy(monkeypatch)
+    result = fake_segmentation_result(classes=[0], height=2, width=2)
+
+    union = _union_mask(result, [5], height=2, width=2, dilate_px=0)
+
+    assert union.sum() == 0
 
 
 def test_log_video_status_respects_enabled_flag(
