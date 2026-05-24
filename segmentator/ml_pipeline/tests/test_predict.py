@@ -321,6 +321,39 @@ def test_cli_dry_run_prints_kwargs(tmp_path: Path, capsys: pytest.CaptureFixture
     assert payload["predict_kwargs"]["name"] == "preview"
 
 
+def test_cli_passes_classes_filter(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"")
+    src = tmp_path / "frames"
+    src.mkdir()
+    (src / "a.jpg").write_bytes(b"")
+
+    monkeypatch.setattr(
+        "ml_pipeline.predict._default_predict_model_factory",
+        lambda ref: _StubModel(ref),
+    )
+
+    code = cli_main(
+        [
+            str(weights),
+            "--source",
+            str(src),
+            "--project",
+            str(tmp_path / "runs"),
+            "--classes",
+            "0,1",
+            "--dry-run",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["predict_kwargs"]["classes"] == [0, 1]
+
+
 def test_cli_writes_report_json(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

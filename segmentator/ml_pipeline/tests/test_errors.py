@@ -530,3 +530,55 @@ def test_cli_errors_missing_dataset(tmp_path: Path, capsys):
     assert code == 1
     captured = capsys.readouterr()
     assert "dataset.yaml not found" in captured.err
+
+
+def test_cli_errors_accepts_dataset_yaml_path(tmp_path: Path, capsys):
+    """CLI should accept a direct path to dataset.yaml as dataset_root."""
+    from ml_pipeline.cli_errors import main
+
+    dataset_root, weights_file = _make_test_dataset(tmp_path)
+    yaml_path = dataset_root / "dataset.yaml"
+
+    import sys
+
+    sys.argv = [
+        "gdpr-yolo-analyze-errors",
+        str(yaml_path),
+        "--weights",
+        str(weights_file),
+        "--dry-run",
+    ]
+
+    code = main()
+
+    assert code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["dry_run"] is True
+
+
+def test_cli_errors_returns_one_when_analysis_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    """CLI should map run_error_analysis failures to exit code 1."""
+    from ml_pipeline.cli_errors import main
+
+    dataset_root, weights_file = _make_test_dataset(tmp_path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("analysis failed")
+
+    monkeypatch.setattr("ml_pipeline.cli_errors.run_error_analysis", boom)
+
+    import sys
+
+    sys.argv = [
+        "gdpr-yolo-analyze-errors",
+        str(dataset_root),
+        "--weights",
+        str(weights_file),
+    ]
+
+    code = main()
+
+    assert code == 1
+    assert "analysis failed" in capsys.readouterr().err

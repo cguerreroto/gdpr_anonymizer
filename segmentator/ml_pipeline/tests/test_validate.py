@@ -196,6 +196,70 @@ def test_extract_metrics_tolerates_missing_seg_or_box() -> None:
     assert metrics["per_class"] == {}
 
 
+def test_extract_metrics_coerces_invalid_map_values() -> None:
+    class _BadSeg:
+        map = "not-a-float"
+        map50 = None
+        map75 = 0.5
+        maps = [0.4]
+
+    results = _FakeResults(save_dir=Path("/tmp/unused"), seg=_BadSeg())
+    metrics = extract_metrics(results)
+    assert metrics["mask"]["map"] is None
+    assert metrics["mask"]["map50"] is None
+    assert metrics["mask"]["map75"] == pytest.approx(0.5)
+
+
+class _NonListableMaps:
+    def __iter__(self):
+        raise TypeError("cannot iterate maps")
+
+
+def test_extract_metrics_tolerates_non_listable_per_class_maps() -> None:
+    class _SegWithBadMaps:
+        map = 0.4
+        map50 = 0.5
+        map75 = 0.3
+        maps = _NonListableMaps()
+
+    class _BoxWithBadMaps:
+        map = 0.5
+        map50 = 0.6
+        maps = _NonListableMaps()
+
+    results = _FakeResults(
+        save_dir=Path("/tmp/unused"),
+        seg=_SegWithBadMaps(),
+        box=_BoxWithBadMaps(),
+        names=["Person", "Car"],
+    )
+    metrics = extract_metrics(results)
+    assert metrics["per_class"] == {}
+
+
+def test_extract_metrics_uses_list_names_for_per_class_keys() -> None:
+    results = _FakeResults(
+        save_dir=Path("/tmp/unused"),
+        seg=_FakeSeg(0.42, 0.61, 0.45, [0.40, 0.44]),
+        box=_FakeBox(0.55, 0.74, [0.52, 0.58]),
+        names=["Person", "Car"],
+    )
+    metrics = extract_metrics(results)
+    assert metrics["per_class"]["Person"]["mask_map"] == pytest.approx(0.40)
+    assert metrics["per_class"]["Car"]["box_map"] == pytest.approx(0.58)
+
+
+def test_extract_metrics_falls_back_to_index_when_name_missing() -> None:
+    results = _FakeResults(
+        save_dir=Path("/tmp/unused"),
+        seg=_FakeSeg(0.1, 0.2, 0.3, [0.4, 0.5, 0.6]),
+        names=["Only"],
+    )
+    metrics = extract_metrics(results)
+    assert metrics["per_class"]["Only"]["mask_map"] == pytest.approx(0.4)
+    assert metrics["per_class"]["2"]["mask_map"] == pytest.approx(0.6)
+
+
 def test_run_validation_dry_run_skips_factory(tmp_path: Path) -> None:
     cfg = _make_config(tmp_path)
     called: list[str] = []
@@ -292,3 +356,14 @@ def test_cli_writes_report_json(tmp_path: Path) -> None:
     assert out_path.is_file()
     data = json.loads(out_path.read_text(encoding="utf-8"))
     assert data["val_kwargs"]["task"] == "segment"
+
+
+def test_cli_requires_dataset_root_without_interpret_report() -> None:
+    with pytest.raises(SystemExit):
+        cli_main([])
+
+
+def test_cli_requires_weights_without_interpret_report(tmp_path: Path) -> None:
+    (tmp_path / "dataset.yaml").write_text("path: .\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        cli_main([str(tmp_path)])

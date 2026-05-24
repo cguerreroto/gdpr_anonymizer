@@ -8,6 +8,7 @@ import yaml
 
 from ml_pipeline.cli_dataset_yaml import main as cli_main
 from ml_pipeline.dataset_yaml import (
+    _label_paths_for_split,
     audit_dataset_yaml,
     build_fixed_config,
     carve_val_from_train,
@@ -156,6 +157,41 @@ def test_cli_apply_clears_strict_issues(sample_dataset: Path) -> None:
     cfg = load_dataset_yaml(sample_dataset)
     assert "nc" in cfg
     assert "names" in cfg
+
+
+def test_cli_strict_apply_reports_remaining_issues(
+    sample_dataset: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[tuple[bool, bool]] = []
+
+    def fake_hygiene(
+        _root: Path,
+        *,
+        apply_fixes: bool,
+        dry_run: bool,
+        default_names: dict[int, str] | None = None,
+    ) -> dict:
+        _ = default_names
+        calls.append((apply_fixes, dry_run))
+        if len(calls) == 1:
+            return {
+                "audit": {"issues": ["nc is not set."]},
+                "proposed_changes": ["Set nc"],
+            }
+        return {"audit": {"issues": ["still broken"]}}
+
+    monkeypatch.setattr(
+        "ml_pipeline.cli_dataset_yaml.run_dataset_yaml_hygiene",
+        fake_hygiene,
+    )
+
+    code = cli_main([str(sample_dataset), "--apply", "--strict"])
+
+    assert code == 1
+    assert "issues remain after apply" in capsys.readouterr().err
+    assert calls == [(True, False), (False, True)]
 
 
 def test_carve_fraction_invalid(sample_dataset: Path) -> None:
@@ -307,3 +343,93 @@ def test_write_report_creates_parent_dirs(tmp_path: Path) -> None:
     write_report(target, {"ok": True})
     payload = target.read_text(encoding="utf-8")
     assert "ok" in payload
+
+
+def test_label_paths_prefers_labels_directory(tmp_path: Path) -> None:
+    train_imgs = tmp_path / "images" / "train"
+    train_lbls = tmp_path / "labels" / "train"
+    train_imgs.mkdir(parents=True)
+    train_lbls.mkdir(parents=True)
+    (train_lbls / "a.txt").write_text("0 0.1 0.1 0.2 0.2\n", encoding="utf-8")
+
+    paths = _label_paths_for_split(tmp_path, "train", train_imgs)
+
+    assert paths == [train_lbls / "a.txt"]
+
+
+def test_label_paths_falls_back_to_image_dir_txt(tmp_path: Path) -> None:
+    train_imgs = tmp_path / "images" / "train"
+    train_imgs.mkdir(parents=True)
+    (train_imgs / "a.txt").write_text("0 0.1 0.1 0.2 0.2\n", encoding="utf-8")
+
+    paths = _label_paths_for_split(tmp_path, "train", train_imgs)
+
+    assert paths == [train_imgs / "a.txt"]
+
+
+def test_collect_class_ids_skips_blank_label_lines(tmp_path: Path) -> None:
+    train_imgs = tmp_path / "images" / "train"
+    train_imgs.mkdir(parents=True)
+    (train_imgs / "a.jpg").write_bytes(b"\xff\xd8\xff")
+    (train_imgs / "a.txt").write_text("0 0.1 0.1 0.2 0.2\n\n  \n", encoding="utf-8")
+    (tmp_path / "dataset.yaml").write_text(
+        yaml.safe_dump({"path": ".", "train": "images/train"}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert collect_class_ids(tmp_path) == {0}
+
+
+def test_audit_warns_when_nc_below_max_class_id() -> None:
+    cfg = {
+        "path": ".",
+        "train": "images/train",
+        "val": "images/val",
+        "names": {0: "Person", 1: "Car"},
+        "nc": 1,
+    }
+    audit = audit_dataset_yaml(cfg, {0, 1})
+    assert any("below max(class id)+1" in warning for warning in audit["warnings"])
+
+
+def test_build_fixed_config_adds_default_split_paths() -> None:
+    cfg = {"path": ".", "names": {0: "Person"}, "nc": 1}
+    fixed, changes = build_fixed_config(cfg, {0})
+    assert fixed["train"] == "images/train"
+    assert fixed["val"] == "images/val"
+    assert fixed["test"] == "images/test"
+    assert any("Added train" in change for change in changes)
+
+
+def test_carve_val_uses_labels_train_when_label_not_in_image_dir(tmp_path: Path) -> None:
+    train_imgs = tmp_path / "images" / "train"
+    train_lbls = tmp_path / "labels" / "train"
+    train_imgs.mkdir(parents=True)
+    train_lbls.mkdir(parents=True)
+    (train_imgs / "a.jpg").write_bytes(b"\xff\xd8\xff")
+    (train_lbls / "a.txt").write_text("0 0.1 0.1 0.2 0.2\n", encoding="utf-8")
+    (train_imgs / "a.txt").write_text("placeholder\n", encoding="utf-8")
+    (tmp_path / "dataset.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "path": ".",
+                "train": "images/train",
+                "val": "images/val",
+                "names": {0: "Person"},
+                "nc": 1,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = carve_val_from_train(
+        tmp_path,
+        fraction=0.5,
+        seed=0,
+        dry_run=False,
+        move=False,
+    )
+
+    assert report["selected_count"] == 1
+    assert (tmp_path / "labels" / "val" / "a.txt").exists()
