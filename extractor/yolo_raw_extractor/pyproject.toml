@@ -1,11 +1,13 @@
 [project]
 name = "yolo-raw-extractor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Frame sampling and dataset augmentation for gdpr_anonymizer"
 readme = "README.md"
 authors = [
-    { name = "decryphe", email = "12104091+decryphe@users.noreply.github.com" }
+    { name = "cguerreroto", email = "55792679+cguerreroto@users.noreply.github.com" },
+    { name = "decryphe", email = "12104091+decryphe@users.noreply.github.com" },
 ]
+license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.13"
 dependencies = [
     "opencv-python>=4.12.0.88",

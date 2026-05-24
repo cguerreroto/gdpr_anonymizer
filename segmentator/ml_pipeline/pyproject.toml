@@ -2,6 +2,10 @@
 name = "ml-pipeline"
 version = "0.1.0"
 description = "Dataset audit and YOLO label layout helpers for gdpr_anonymizer"
+authors = [
+    { name = "cguerreroto", email = "55792679+cguerreroto@users.noreply.github.com" },
+]
+license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
