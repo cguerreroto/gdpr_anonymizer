@@ -21,6 +21,22 @@ from ml_pipeline.export import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_onnx_export_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the real onnx/onnxslim/onnxruntime import probe by default.
+
+    The export driver enforces these optional dependencies in
+    ``validate_export_inputs`` when ``format == "onnx"``. The unit tests in
+    this module use stub factories and never call Ultralytics, so they should
+    not require the [export] extra to be installed. Tests that intentionally
+    exercise the failure path can override this fixture by re-monkeypatching
+    the same symbol.
+    """
+    monkeypatch.setattr(
+        "ml_pipeline.export.ensure_onnx_export_requirements", lambda: None
+    )
+
+
 class _StubModel:
     def __init__(self, ref: str) -> None:
         self.ref = ref
