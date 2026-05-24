@@ -4,6 +4,10 @@ The repository provides tooling for a video-oriented privacy workflow: frame sam
 
 The following sections summarize the components and a conventional processing order.
 
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify, and redistribute the software for noncommercial purposes when you include the license and the author notices described there and in [AUTHORS.md](AUTHORS.md). Commercial use is not permitted under this license.
+
 ## Pipeline at a glance
 
 | Order | Stage | Tool | Location |
