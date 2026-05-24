@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
-import numpy as np
 import pytest
 import yaml
 import yolo_raw_extractor.augment as aug
+import numpy as np
 
 
 def _build_minimal_dataset(root: Path, with_segments: bool = False) -> None:
@@ -46,6 +46,209 @@ def _build_minimal_dataset(root: Path, with_segments: bool = False) -> None:
             ),
             encoding="utf-8",
         )
+
+
+def _make_segment_asset(
+    size: int = 12,
+    *,
+    channels: int = 4,
+    alpha: int = 255,
+    points: np.ndarray | None = None,
+    class_id: int = 0,
+) -> aug.SegmentAsset:
+    if channels >= 4:
+        image = np.zeros((size, size, 4), dtype=np.uint8)
+        image[:, :, :3] = 128
+        image[:, :, 3] = alpha
+    else:
+        image = np.zeros((size, size, channels), dtype=np.uint8)
+    if points is None:
+        points = np.array(
+            [[1.0, 1.0], [float(size - 1), 1.0], [float(size - 1), float(size - 1)]],
+            dtype=np.float32,
+        )
+    return aug.SegmentAsset(class_id, "person", image, points)
+
+
+def test_place_random_segment_places_valid_asset() -> None:
+    canvas = np.full((80, 80, 3), 50, dtype=np.uint8)
+    asset = _make_segment_asset(size=12)
+    rng = random.Random(1)
+
+    success, entry = aug.place_random_segment(canvas, [asset], rng)
+
+    assert success is True
+    assert entry is not None
+    assert entry.class_id == 0
+    assert entry.polygon.shape[0] >= 3
+    assert not np.all(canvas == 50)
+
+
+def test_place_random_segment_rejects_asset_without_alpha() -> None:
+    canvas = np.zeros((40, 40, 3), dtype=np.uint8)
+    asset = _make_segment_asset(size=10, channels=3)
+
+    success, entry = aug.place_random_segment(canvas, [asset], random.Random(0))
+
+    assert success is False
+    assert entry is None
+
+
+def test_place_random_segment_rejects_patch_larger_than_canvas() -> None:
+    canvas = np.zeros((8, 8, 3), dtype=np.uint8)
+    asset = _make_segment_asset(size=40)
+
+    success, entry = aug.place_random_segment(canvas, [asset], random.Random(0))
+
+    assert success is False
+    assert entry is None
+
+
+def test_place_random_segment_rejects_zero_alpha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canvas = np.zeros((40, 40, 3), dtype=np.uint8)
+    asset = _make_segment_asset(size=12, alpha=0)
+    transparent = np.zeros((14, 14, 4), dtype=np.uint8)
+
+    def fake_rotate(_patch: np.ndarray, _angle: float) -> tuple[np.ndarray, np.ndarray]:
+        matrix = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+        return transparent, matrix
+
+    monkeypatch.setattr(aug, "rotate_with_bounds", fake_rotate)
+
+    success, entry = aug.place_random_segment(canvas, [asset], random.Random(0))
+
+    assert success is False
+    assert entry is None
+
+
+def test_place_random_segment_rejects_empty_points() -> None:
+    canvas = np.zeros((40, 40, 3), dtype=np.uint8)
+    asset = aug.SegmentAsset(
+        0,
+        "person",
+        np.zeros((10, 10, 4), dtype=np.uint8),
+        np.zeros((0, 2), dtype=np.float32),
+    )
+
+    success, entry = aug.place_random_segment(canvas, [asset], random.Random(0))
+
+    assert success is False
+    assert entry is None
+
+
+def test_insert_segments_adds_label_entries() -> None:
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    assets = [_make_segment_asset(size=12)]
+    base_entries = [
+        aug.LabelEntry(
+            class_id=0,
+            polygon=np.array([[5.0, 5.0], [15.0, 5.0], [15.0, 15.0]], dtype=np.float32),
+        )
+    ]
+
+    canvas, inserted, entries = aug.insert_segments(
+        image, base_entries, assets, random.Random(0)
+    )
+
+    assert inserted is True
+    assert len(entries) > len(base_entries)
+    assert canvas.shape == image.shape
+
+
+def test_add_offwhite_rectangle_returns_none_when_patch_exceeds_canvas() -> None:
+    image = np.zeros((12, 12, 3), dtype=np.uint8)
+    polygon = np.array(
+        [[0.0, 0.0], [11.0, 0.0], [11.0, 11.0], [0.0, 11.0]], dtype=np.float32
+    )
+    entries = [aug.LabelEntry(class_id=0, polygon=polygon)]
+
+    result = aug.add_offwhite_rectangle(image, entries, random.Random(0))
+
+    assert result is None
+
+
+def test_augment_image_logs_when_insertion_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    img_path = tmp_path / "frame.jpg"
+    lbl_path = tmp_path / "frame.txt"
+    lbl_path.write_text("0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9\n", encoding="utf-8")
+    monkeypatch.setattr(
+        aug.cv2, "imread", lambda _path, _flags: np.zeros((40, 40, 3), np.uint8)
+    )
+    monkeypatch.setattr(aug.cv2, "imwrite", lambda _path, _img: True)
+
+    with caplog.at_level("INFO"):
+        aug.augment_image(
+            img_path,
+            lbl_path,
+            tmp_path,
+            [],
+            random.Random(0),
+            np.random.default_rng(0),
+        )
+
+    assert any("Insertion skipped" in record.message for record in caplog.records)
+
+
+def test_augment_dataset_missing_labels_directory_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    cfg = {"path": ".", "train": "images/train", "names": {0: "person"}}
+    (src / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        aug.augment_dataset(src, tmp_path / "dst", seed=0)
+
+    assert any("Missing labels directory" in record.message for record in caplog.records)
+
+
+def test_augment_dataset_skips_empty_label_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    src = tmp_path / "src"
+    img_dir = src / "images" / "train"
+    lbl_dir = src / "labels" / "train"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+    (img_dir / "frame.jpg").write_bytes(b"")
+    (lbl_dir / "frame.txt").write_text(
+        "0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9\n", encoding="utf-8"
+    )
+    (lbl_dir / "empty.txt").write_text("", encoding="utf-8")
+    cfg = {"path": ".", "train": "images/train", "names": {0: "person"}}
+    (src / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    with caplog.at_level("DEBUG"):
+        aug.augment_dataset(src, tmp_path / "dst", seed=0)
+
+    assert any("Skipping empty label file" in record.message for record in caplog.records)
+
+
+def test_augment_dataset_skips_label_without_matching_image(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    src = tmp_path / "src"
+    img_dir = src / "images" / "train"
+    lbl_dir = src / "labels" / "train"
+    img_dir.mkdir(parents=True)
+    lbl_dir.mkdir(parents=True)
+    (lbl_dir / "orphan.txt").write_text(
+        "0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9\n", encoding="utf-8"
+    )
+    cfg = {"path": ".", "train": "images/train", "names": {0: "person"}}
+    (src / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        aug.augment_dataset(src, tmp_path / "dst", seed=0)
+
+    assert any("missing image match" in record.message for record in caplog.records)
 
 
 def test_parse_args_minimal() -> None:
