@@ -113,6 +113,36 @@ def test_cli_strict_without_apply(sample_dataset: Path) -> None:
     assert code == 1
 
 
+def test_cli_carve_writes_report_json(
+    sample_dataset: Path, tmp_path: Path
+) -> None:
+    report_path = tmp_path / "report.json"
+    code = cli_main(
+        [
+            str(sample_dataset),
+            "--apply",
+            "--carve-val-fraction",
+            "0.5",
+            "--report-json",
+            str(report_path),
+        ]
+    )
+    assert code == 0
+    assert report_path.exists()
+
+
+def test_cli_carve_dry_run_reports(sample_dataset: Path) -> None:
+    code = cli_main(
+        [
+            str(sample_dataset),
+            "--carve-val-fraction",
+            "0.5",
+            "--dry-run",
+        ]
+    )
+    assert code == 0
+
+
 def test_cli_apply_clears_strict_issues(sample_dataset: Path) -> None:
     (sample_dataset / "dataset.yaml").write_text(
         yaml.safe_dump(
@@ -137,3 +167,143 @@ def test_carve_fraction_invalid(sample_dataset: Path) -> None:
             dry_run=True,
             move=False,
         )
+
+
+def test_load_dataset_yaml_missing_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="Missing dataset.yaml"):
+        load_dataset_yaml(tmp_path)
+
+
+def test_parse_names_field_list_form() -> None:
+    from ml_pipeline.dataset_yaml import parse_names_field
+
+    assert parse_names_field(["a", "b"]) == {0: "a", 1: "b"}
+
+
+def test_parse_names_field_dict_with_bad_key() -> None:
+    from ml_pipeline.dataset_yaml import parse_names_field
+
+    assert parse_names_field({"abc": "skip", 0: "Person"}) == {0: "Person"}
+
+
+def test_parse_names_field_unknown_type_returns_empty() -> None:
+    from ml_pipeline.dataset_yaml import parse_names_field
+
+    assert parse_names_field(42) == {}
+    assert parse_names_field(None) == {}
+
+
+def test_audit_warns_on_unused_names_and_path_gap(tmp_path: Path) -> None:
+    cfg = {
+        "path": ".",
+        "names": {0: "Person", 1: "Car", 7: "Tree"},
+        "nc": 1,
+    }
+    audit = audit_dataset_yaml(cfg, {0})
+    assert any("unused" in w for w in audit["warnings"])
+    assert any("nc=1 does not match" in i for i in audit["issues"])
+
+
+def test_audit_nc_not_integer() -> None:
+    cfg = {"names": {0: "Person"}, "nc": "abc"}
+    audit = audit_dataset_yaml(cfg, {0})
+    assert any("not an integer" in i for i in audit["issues"])
+
+
+def test_audit_warns_when_no_classes(tmp_path: Path) -> None:
+    cfg = {"names": {0: "Person"}, "nc": 1}
+    audit = audit_dataset_yaml(cfg, set())
+    assert any("No class indices" in w for w in audit["warnings"])
+
+
+def test_build_fixed_config_sets_path(tmp_path: Path) -> None:
+    cfg = {"names": {0: "Person"}, "nc": 1, "path": ""}
+    fixed, changes = build_fixed_config(cfg, {0})
+    assert fixed["path"] == "."
+    assert any("Set path" in c for c in changes)
+
+
+def test_build_fixed_config_empty_class_ids(tmp_path: Path) -> None:
+    cfg = {"names": {0: "Person"}, "nc": 1}
+    fixed, _changes = build_fixed_config(cfg, set())
+    assert fixed["nc"] == 1
+
+
+def test_build_fixed_config_no_class_ids_falls_back_to_default_count(
+    tmp_path: Path,
+) -> None:
+    cfg = {"path": ".", "train": "images/train"}
+    fixed, changes = build_fixed_config(cfg, set())
+    assert fixed["nc"] == 2
+    assert any("Set nc" in c for c in changes)
+
+
+def test_carve_val_missing_train_raises(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="train image"):
+        carve_val_from_train(
+            tmp_path,
+            fraction=0.5,
+            seed=0,
+            dry_run=True,
+            move=False,
+        )
+
+
+def test_carve_val_move_mode(sample_dataset: Path) -> None:
+    before = list((sample_dataset / "images" / "train").glob("*.jpg"))
+    carve_val_from_train(
+        sample_dataset,
+        fraction=0.5,
+        seed=0,
+        dry_run=False,
+        move=True,
+    )
+    after = list((sample_dataset / "images" / "train").glob("*.jpg"))
+    assert len(after) < len(before)
+
+
+def test_carve_val_uses_separate_label_dir(tmp_path: Path) -> None:
+    train_imgs = tmp_path / "images" / "train"
+    train_lbls = tmp_path / "labels" / "train"
+    train_imgs.mkdir(parents=True)
+    train_lbls.mkdir(parents=True)
+    for stem in ("a", "b"):
+        (train_imgs / f"{stem}.jpg").write_bytes(b"\xff\xd8\xff")
+        (train_lbls / f"{stem}.txt").write_text(
+            "0 0.1 0.1 0.2 0.2 0.3 0.3\n", encoding="utf-8"
+        )
+    (tmp_path / "dataset.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "path": ".",
+                "train": "images/train",
+                "val": "images/val",
+                "names": {0: "Person"},
+                "nc": 1,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    train_imgs_with_txt = tmp_path / "images" / "train"
+    for stem in ("a", "b"):
+        (train_imgs_with_txt / f"{stem}.txt").write_text("placeholder", encoding="utf-8")
+
+    report = carve_val_from_train(
+        tmp_path,
+        fraction=0.5,
+        seed=0,
+        dry_run=False,
+        move=False,
+    )
+    assert report["selected_count"] >= 1
+
+
+def test_write_report_creates_parent_dirs(tmp_path: Path) -> None:
+    from ml_pipeline.dataset_yaml import write_report
+
+    target = tmp_path / "nested" / "report.json"
+    write_report(target, {"ok": True})
+    payload = target.read_text(encoding="utf-8")
+    assert "ok" in payload

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
 import pytest
 
 from ml_pipeline.cli_validate import main as cli_validate_main
@@ -85,3 +84,37 @@ def test_cli_interpret_report_reads_saved_json(
     assert code == 0
     out = json.loads(capsys.readouterr().out)
     assert out["assessment"]["band"] == "below_threshold"
+
+
+def test_assess_metrics_unknown_band_when_mask_map_missing() -> None:
+    out = assess_metrics({})
+    assert out["assessment"]["band"] == "unknown"
+    assert out["assessment"]["ready_for_video_blur"] is False
+    assert any("Could not read" in r for r in out["recommendations"])
+
+
+def test_assess_metrics_class_gap_recommendation() -> None:
+    metrics = {
+        "mask": {"map": 0.45, "map50": 0.50},
+        "per_class": {
+            "Person": {"mask_map": 0.20},
+            "Car": {"mask_map": 0.55},
+        },
+    }
+    out = assess_metrics(metrics)
+    assert any("Largest gap" in line for line in out["recommendations"])
+
+
+def test_assess_metrics_map50_far_above_map() -> None:
+    metrics = {"mask": {"map": 0.20, "map50": 0.45}}
+    out = assess_metrics(metrics)
+    assert any("loosely aligned" in line for line in out["recommendations"])
+
+
+def test_rank_classes_handles_invalid_per_class_value() -> None:
+    metrics = {
+        "mask": {"map": 0.40, "map50": 0.50},
+        "per_class": {"weird": "not-a-dict"},
+    }
+    out = assess_metrics(metrics)
+    assert out["assessment"]["band"] == "usable"

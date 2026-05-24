@@ -119,6 +119,44 @@ def test_export_onnx_missing_message() -> None:
     assert "uv sync --extra train --extra export" in EXPORT_ONNX_MISSING_MESSAGE
 
 
+def test_raise_export_onnx_missing_chains_original() -> None:
+    from ml_pipeline.export_extra import raise_export_onnx_missing
+
+    with pytest.raises(RuntimeError) as info:
+        raise_export_onnx_missing(ImportError("no onnx"))
+    assert isinstance(info.value.__cause__, ImportError)
+
+
+def test_ensure_onnx_export_requirements_raises_when_modules_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ml_pipeline import export_extra
+
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name in {"onnx", "onnxslim", "onnxruntime"}:
+            raise ImportError(f"no {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    with pytest.raises(RuntimeError, match="Missing modules"):
+        export_extra.ensure_onnx_export_requirements()
+
+
+def test_ensure_onnx_export_requirements_passes_when_modules_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ml_pipeline import export_extra
+    import sys
+
+    for name in ("onnx", "onnxslim", "onnxruntime"):
+        sys.modules.setdefault(name, type(sys)("dummy_" + name))
+
+    export_extra.ensure_onnx_export_requirements()
+
+
 def test_validate_export_inputs_rejects_missing_weights(tmp_path: Path) -> None:
     cfg = ExportConfig(weights=tmp_path / "missing.pt")
     with pytest.raises(FileNotFoundError, match="Missing weights"):
@@ -266,3 +304,30 @@ def test_cli_no_simplify_flag(
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["export_kwargs"]["simplify"] is False
+
+
+def test_run_export_uses_first_path_from_list(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path)
+    expected_first = tmp_path / "alt.onnx"
+    expected_first.write_bytes(b"alt")
+
+    def factory(ref: str) -> _StubModel:
+        model = _StubModel(ref)
+        model._return_value = [str(expected_first), str(tmp_path / "second.onnx")]
+        return model
+
+    report = run_export(cfg, model_factory=factory)
+    assert report["output_path"] == str(expected_first)
+    assert report["output_exists"] is True
+
+
+def test_run_export_invalid_return_falls_back(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path)
+
+    def factory(ref: str) -> _StubModel:
+        model = _StubModel(ref)
+        model._return_value = 42
+        return model
+
+    report = run_export(cfg, model_factory=factory)
+    assert report["output_path"] == report["expected_output"]

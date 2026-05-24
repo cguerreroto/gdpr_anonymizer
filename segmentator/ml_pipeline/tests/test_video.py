@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-
 import pytest
 
 from ml_pipeline.cli_video import main as cli_main
@@ -62,6 +61,66 @@ def test_frame_progress_without_total_shows_frame_count() -> None:
     progress.update(12)
     progress.close()
     assert "frame 12" in stream.getvalue()
+
+
+def test_frame_progress_disabled_writes_nothing() -> None:
+    import io
+
+    stream = io.StringIO()
+    progress = FrameProgress(total=100, stream=stream, enabled=False)
+    progress.update(5)
+    progress.close()
+    assert stream.getvalue() == ""
+
+
+def test_result_classes_handles_missing_boxes() -> None:
+    from ml_pipeline.video import _result_classes
+
+    class _Empty:
+        pass
+
+    assert _result_classes(_Empty()) == []
+
+
+def test_result_classes_handles_missing_cls() -> None:
+    from ml_pipeline.video import _result_classes
+
+    class _Boxes:
+        pass
+
+    class _Result:
+        boxes = _Boxes()
+
+    assert _result_classes(_Result()) == []
+
+
+def test_result_classes_uses_tolist_when_present() -> None:
+    from ml_pipeline.video import _result_classes
+
+    class _ClsTensor:
+        @staticmethod
+        def tolist() -> list[float]:
+            return [0.0, 1.0, 1.0]
+
+    class _Boxes:
+        cls = _ClsTensor()
+
+    class _Result:
+        boxes = _Boxes()
+
+    assert _result_classes(_Result()) == [0, 1, 1]
+
+
+def test_result_classes_falls_back_to_iter() -> None:
+    from ml_pipeline.video import _result_classes
+
+    class _Boxes:
+        cls = [0, 2, 1]
+
+    class _Result:
+        boxes = _Boxes()
+
+    assert _result_classes(_Result()) == [0, 2, 1]
 
 
 def test_log_video_status_respects_enabled_flag(
