@@ -1,5 +1,7 @@
 # gdpr_anonymizer
 
+[![CI](https://github.com/cguerreroto/gdpr_anonymizer/actions/workflows/ci.yml/badge.svg)](https://github.com/cguerreroto/gdpr_anonymizer/actions/workflows/ci.yml)
+
 Tools for a video privacy workflow: sample frames, annotate instance segmentation masks (for example people or vehicles), train a YOLO26 segmentation model, and blur sensitive regions before sharing footage. Outputs use a YOLO-style dataset layout for custom training and evaluation.
 
 The repository targets researchers and developers who need local, repeatable control over labeling, training, and anonymization. Datasets and model weights stay on your machine; you pass explicit paths to each command.
@@ -81,7 +83,7 @@ From the repository root:
 make test
 ```
 
-Per-package test commands: [CONTRIBUTING.md](CONTRIBUTING.md).
+Continuous integration runs on push and pull requests to `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Per-package test commands: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Limitations
 
