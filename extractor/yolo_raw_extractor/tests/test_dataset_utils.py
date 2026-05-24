@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-
 import numpy as np
 import pytest
 import yaml
@@ -93,3 +92,41 @@ def test_load_dataset_config(tmp_path: Path) -> None:
 def test_load_dataset_config_missing(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="Missing dataset.yaml"):
         load_dataset_config(tmp_path)
+
+
+def test_load_dataset_config_skips_unparseable_class_keys(tmp_path: Path) -> None:
+    root = tmp_path / "ds"
+    train_img = root / "images" / "train"
+    train_img.mkdir(parents=True)
+    cfg = {
+        "train": "images/train",
+        "names": {"abc": "ignored", 7: "person"},
+    }
+    (root / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    _splits, names = load_dataset_config(root)
+
+    assert names == {7: "person"}
+
+
+def test_find_image_path_returns_none_when_no_match(tmp_path: Path) -> None:
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    found = find_image_path(tmp_path / "labels" / "missing.txt", img_dir)
+    assert found is None
+
+
+def test_load_dataset_config_absolute_split_path(tmp_path: Path) -> None:
+    root = tmp_path / "ds"
+    train_img = tmp_path / "abs-train"
+    train_img.mkdir(parents=True)
+    root.mkdir(parents=True)
+    cfg = {
+        "train": str(train_img),
+        "names": {0: "person"},
+    }
+    (root / "dataset.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    splits, _names = load_dataset_config(root)
+
+    assert splits["train"] == train_img
