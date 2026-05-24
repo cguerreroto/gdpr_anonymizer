@@ -28,3 +28,10 @@ unsafe_code = "forbid"
 pedantic = { level = "warn", priority = -1 }
 
 missing_errors_doc = "allow"
+
+# Used by `cargo flamegraph --profile profiling` (see PERFORMANCE.md). Keeps release-like
+# optimizations but includes debug symbols for readable flamegraphs.
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
